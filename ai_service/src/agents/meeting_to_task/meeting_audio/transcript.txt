@@ -1,0 +1,53 @@
+Alo, chào Lan. Em có đó không? Anh em mình dành khoảng 3 phút để chốt nhanh danh sách task trên hệ thống cho Sprint 42 này nhé. Anh vừa tạo mấy cái ticket mới, cần điền nốt thông tin để đẩy vào database.
+
+Vâng em đây anh Hùng ơi. Em đang mở bảng Task đây rồi. Anh đọc đi em update luôn cho nóng.
+
+Ok, cái đầu tiên quan trọng nhất. Title là "Tích hợp cổng thanh toán VNPay". Cái này Description anh đã ghi rõ là cần xử lý cả phần IPN callback nhé.
+
+Vâng, cái này quan trọng. Priority chắc chắn là "High" rồi. Tags em sẽ để là "Backend" và "Payment".
+
+Chuẩn. Về độ khó, em ước lượng Points là bao nhiêu?
+
+Hừm, cái này dính đến tiền nong, cần test kỹ. Em nghĩ Points là 8.
+
+Đồng ý 8 điểm. Về thời gian, StartDate mình để là sáng mai, ngày 04/12 nhé. DueDate anh cần xong trước ngày 10/12. Em gán assignedUserId cho bạn Tuấn Backend giúp anh.
+
+Rồi ạ, em đã assign cho Tuấn. Status hiện tại em để là "To Do" nhé.
+
+Tiếp theo, task thứ hai. Title là "Thiết kế lại giao diện Dashboard báo cáo". Cái này Description là làm theo file Figma mới của bên Design gửi sáng nay nhé, tập trung vào Dark Mode.
+
+À cái này em xem rồi. Priority để "Medium" thôi anh nhỉ? Vì tính năng cũ vẫn chạy được.
+
+Ừ, Medium cũng được. Nhưng Tags nhớ đánh là "Frontend" và "UI/UX".
+
+Vâng. Cái này em thấy không quá phức tạp nhưng nhiều component lặt vặt. Points em để là 5 nhé.
+
+Ok 5 điểm. StartDate là ngày 05/12, còn DueDate cho thư thả một chút, ngày 12/12 nhé. Task này assignedUserId em gán cho chính em đi, Lan nhé.
+
+Ok anh, em nhận task này.
+
+Rồi, còn một cái cuối cùng hơi gấp. Title là "Fix lỗi Crash App khi upload ảnh quá 5MB". Priority cái này phải là "Critical" hoặc "High" đấy Lan ạ.
+
+Vâng, lỗi này khách kêu nhiều. Để em set Priority là "High". Tags là "Bug" và "Mobile".
+
+Points cái này chắc nhỏ thôi, fix nhanh mà.
+
+Vâng, Points là 2 thôi ạ. Em sẽ làm luôn chiều nay. StartDate là hôm nay 03/12, DueDate cũng là 03/12 luôn. Em assign cho em luôn nhé.
+
+Khoan, Lan đang ôm cái Dashboard rồi. Em gán assignedUserId cho bạn Nam Mobile đi. Để Nam làm cái này.
+
+À vâng, ok để em chuyển sang cho Nam. Status em chuyển luôn sang "In Progress" nhé vì Nam đang ngồi cạnh em bảo làm luôn được.
+
+Ok chốt thế nhé. Tổng kết lại mình có 3 tasks chính.
+
+Thanh toán VNPay - Tuấn làm - 8 points.
+
+UI Dashboard - Lan làm - 5 points.
+
+Fix bug Upload ảnh - Nam làm - 2 points. Tất cả ProjectID đều thuộc dự án "SuperApp_V2" nhé. Em check lại lần cuối rồi lưu vào DB giúp anh.
+
+Dạ vâng, đủ hết thông tin rồi anh. Em lưu đây.
+
+Cảm ơn em. Bye nhé.
+
+Bye anh.
