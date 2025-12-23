@@ -1,0 +1,53 @@
+﻿# --- Core System ---
+python-dotenv
+numpy<2.0.0
+requests
+httpx
+# Bỏ pin cứng, để FastAPI tự chọn version phù hợp
+fastapi
+uvicorn
+starlette
+python-socketio
+
+# --- Database ---
+# Nới lỏng để pip tự chọn bản 1.x hoặc 2.x phù hợp
+sqlalchemy>=1.4.0
+asyncpg
+aiosqlite
+
+# --- Security ---
+passlib[bcrypt]
+python-jose[cryptography]
+bcrypt
+
+# --- Data Validation ---
+pydantic>=2.0.0
+pydantic-settings
+
+# --- AI & LangChain (Dùng bản mới nhất tương thích) ---
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-text-splitters
+langchain-google-genai
+langchain-weaviate
+langgraph
+
+# --- Models & Tools ---
+openai
+google-generativeai
+transformers
+tiktoken
+tavily-python
+duckduckgo_search
+
+# --- Audio & Vector DB ---
+faster-whisper
+# Giữ v3 vì code cũ có thể chưa tương thích v4, nhưng cho phép update các bản vá lỗi
+weaviate-client>=3.25.0,<4.0.0
+
+# --- Unstructured ---
+unstructured
+unstructured-client
+python-magic-bin; platform_system == 'Windows'
