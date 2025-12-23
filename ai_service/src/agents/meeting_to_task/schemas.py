@@ -1,5 +1,5 @@
 """
-Schemas for Meeting-to-Task Agent
+Schemes for Meeting-to-Task Agent
 """
 from typing import Literal, TypedDict, List, Optional
 from pydantic import BaseModel, Field
@@ -7,10 +7,7 @@ from pydantic import BaseModel, Field
 
 class ActionItem(BaseModel):
     """
-    Schema cho một action item - matches backend POST /tasks input.
-    Required: title (task name)
-    Optional: description, status, priority, tags, dueDate, points, assignee
-    Note: projectId, authorUserId come from meeting_metadata. startDate is auto-set to current date.
+    Schema for an action item - matches backend POST /tasks input.
     """
     title: str = Field(..., description="Tiêu đề task, mô tả ngắn gọn công việc cần làm")
     description: Optional[str] = Field(None, description="Mô tả chi tiết về task, context và yêu cầu cụ thể")
@@ -23,39 +20,38 @@ class ActionItem(BaseModel):
 
 
 class ReflectionOutput(BaseModel): 
-    """Schema cho output của reflection node - kiểm tra chất lượng MoM và Action Items"""
+    """Schema for output of reflection node"""
     critique: str = Field(..., description="Đánh giá chi tiết về chất lượng, liệt kê các vấn đề và đề xuất cải thiện")
     decision: Literal['accept', 'revise'] = Field(..., description="Quyết định: 'accept' nếu đạt chất lượng, 'revise' nếu cần chỉnh sửa")
 
 
 class MeetingOutput(BaseModel):
-    """Schema cho output của meeting analysis node - kết quả phân tích cuộc họp"""
+    """Schema for output of meeting analysis node"""
     summary: str = Field(..., description="Tóm tắt cuộc họp bao gồm: mục đích, nội dung thảo luận chính, các quyết định đưa ra")
     action_items: List[ActionItem] = Field(..., description="Danh sách các công việc cần thực hiện sau cuộc họp")
 
 
 class AgentState(TypedDict):
     """
-    AgentState lưu trữ thông tin xuyên suốt workflow của Meeting-to-Task Agent.
-    Được sử dụng bởi LangGraph để truyền dữ liệu giữa các nodes.
+    AgentState stores information throughout the Meeting-to-Task Agent workflow.
     """
-    # Input - Dữ liệu đầu vào
-    audio_file_path: str  # Đường dẫn đến file âm thanh cuộc họp (.mp3, .wav, .m4a)
-    meeting_metadata: Optional[dict]  # Metadata: title, date, projectId, teamId, authorUserId, participants
+    # Input
+    audio_file_path: str
+    meeting_metadata: Optional[dict]
     
-    # Processing - Dữ liệu xử lý trung gian
-    transcript: str  # Văn bản transcript từ STT
-    mom: str  # Minutes of Meeting - tóm tắt cuộc họp
-    action_items: List[dict]  # Danh sách action items dạng dict
+    # Processing
+    transcript: str
+    mom: str
+    action_items: List[dict]
     
-    # Reflection - Kết quả kiểm tra chất lượng
-    reflect_decision: str  # Quyết định từ reflection: 'accept' hoặc 'revise'
-    critique: str  # Nội dung đánh giá và đề xuất cải thiện
+    # Reflection
+    reflect_decision: str
+    critique: str
     
-    # Completion - Kết quả cuối cùng
-    tasks_created: List[dict]  # Danh sách tasks đã tạo trong backend (với id từ API)
-    notification_sent: List[dict]  # Kết quả gửi email: [{assignee, email, title, status}]
+    # Completion
+    tasks_created: List[dict]
+    notification_sent: List[dict]
     
-    # Control flow - Điều khiển luồng
-    revision_count: int  # Số lần đã tinh chỉnh
-    max_revisions: int  # Số lần tinh chỉnh tối đa cho phép
+    # Control flow
+    revision_count: int
+    max_revisions: int

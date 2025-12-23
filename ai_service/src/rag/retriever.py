@@ -1,52 +1,39 @@
-import os
 import logging
-import weaviate
 from weaviate.classes.query import Rerank, Filter, MetadataQuery
-from typing import List, Dict, Optional
+from typing import Dict, Optional
+from src.core.database import get_weaviate_client
 
 logger = logging.getLogger(__name__)
 
 def retrieve(
     query: str,
     collection_name: str,
-    metadata: Optional[str] = None,
+    metadata: Optional[Dict] = None,
     top_k: int = 15,
     alpha: float = 0.5,
-    use_reranker: bool = False) -> Dict:
+    use_reranker: bool = False) -> Optional[Dict]:
     """
     Perform hybrid search (keyword + vector) with optional reranking and filtering.
-    
-    Args:
-        query: The search query string
-        collection_name: The name of the collection to search
-        metadata: Optional metadata filter as a dictionary
-        top_k: Number of results to return
-        alpha: Weighting for hybrid search (0 = keyword, 1 = vector)
-        use_reranker: Whether to use Weaviate's reranker module
     """
-    port = int(os.environ.get("WEAVIATE_PORT", 8080))
-    grpc_port = int(os.environ.get("WEAVIATE_GRPC_PORT", 50051))
-    
-    client = weaviate.connect_to_local(
-        port=port, 
-        grpc_port=grpc_port
-    )
+    client = get_weaviate_client()
         
-    collection = client.collections.get(collection_name)
-    
-    # Construct filter
-    if metadata:
-        filter_list = []
-        for key, value in metadata.items():
-            filter_list.append(Filter.by_property(key).contains_any([value]))
-    
-        search_filter = Filter.any_of(filter_list)   
-    
-    # Perform hybrid search        
     try:
+        collection = client.collections.get(collection_name)
+        
+        # Construct filter
+        search_filter = None
+        if metadata:
+            filter_list = []
+            for key, value in metadata.items():
+                filter_list.append(Filter.by_property(key).contains_any([value]))
+            
+            if filter_list:
+                search_filter = Filter.any_of(filter_list)   
+        
+        # Perform hybrid search        
         results = collection.query.hybrid(
             query=query,
-            filters=search_filter if metadata else None,
+            filters=search_filter,
             alpha=alpha,
             limit=top_k,
             rerank=Rerank(
@@ -55,13 +42,13 @@ def retrieve(
             ) if use_reranker else None,
             return_metadata=MetadataQuery(score=True, distance=True)
         )
-        client.close()
         return results
     
     except Exception as e:
         logger.error(f"Error during retrieval: {e}")
-        client.close()
         return None
+    # Note: We do NOT close the client here as it is a singleton shared instance
+
 
 def format_retrieved_documents(results) -> str:
     """Format Weaviate objects into structured string for LLM context."""
