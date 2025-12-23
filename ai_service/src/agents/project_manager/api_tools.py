@@ -15,23 +15,24 @@ load_dotenv()
 # Backend API base URL (points to FastAPI backend in this workspace)
 API_BASE_URL = os.environ.get('API_BASE_URL', 'http://localhost:8000/api')
 
-_auth_token_cache: Optional[str] = None
+from src.core.config import settings
+from src.core.context import get_request_token
+
+# Cache
+_auth_token_cache: Optional[str] = None # Kept for backward compat if needed, but context is preferred
 
 
 def _get_auth_headers() -> dict:
-    """Return headers including Authorization if a bearer token is available.
-
-    Checks `API_BEARER_TOKEN` then tries `API_LOGIN_USER`/`API_LOGIN_PASS` to obtain a token.
-    """
-    global _auth_token_cache
+    """Return headers including Authorization using the request-scoped token."""
     headers = {"Content-Type": "application/json"}
 
-    token = os.environ.get("API_BEARER_TOKEN") or _auth_token_cache
+    token = get_request_token()
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        headers["Authorization"] = f"Bearer {token}" if not token.startswith("Bearer ") else token
         return headers
 
-    print("[project_manager.api_tools] No API bearer token found; requests will be unauthenticated")
+    # Fallback to legacy env/cache if needed (optional)
+    # print("[project_manager.api_tools] No request token found.")
     return headers
 
 # HELPER FUNCTIONS
@@ -85,26 +86,6 @@ def _api_patch(endpoint: str, data: Dict) -> Dict[str, Any]:
             return {"success": False, "error": f"API error ({response.status_code}): {response.text}"}
     except requests.RequestException as e:
         return {"success": False, "error": f"Network error: {e}"}
-
-def _summarize_tasks(tasks: List[Dict]) -> Dict[str, Any]:
-    """Tạo summary thống kê từ list tasks"""
-    if not tasks:
-        return {"total": 0, "message": "No tasks found"}
-    
-    status_count = {}
-    priority_count = {}
-    
-    for task in tasks:
-        status = task.get("status", "Unknown")
-        priority = task.get("priority", "Unknown")
-        status_count[status] = status_count.get(status, 0) + 1
-        priority_count[priority] = priority_count.get(priority, 0) + 1
-    
-    return {
-        "total": len(tasks),
-        "by_status": status_count,
-        "by_priority": priority_count
-    }
 
 # INPUT SCHEMAS
 class CreateTaskInput(BaseModel):
@@ -161,11 +142,11 @@ def create_task(
         "status": status,
         "tags": [],  # Default empty list
         "due_date": due_date,
-        "assignee_id": assigned_user_id,
+        "assigned_user_id": assigned_user_id,
     }
     # Chỉ gửi author_id nếu có (dù backend thường ignore và dùng token)
     if author_user_id:
-        payload["author_id"] = author_user_id
+        payload["author_user_id"] = author_user_id
     
     result = _api_post("/v1/tasks", payload)
     
@@ -268,13 +249,10 @@ def get_project_tasks(project_id: str) -> Dict[str, Any]:
         return result
         
     tasks = result["data"]
-    # Thống kê sơ bộ để AI dễ trả lời
-    summary = _summarize_tasks(tasks)
     
     return {
         "success": True,
         "tasks": tasks,
-        "summary": summary
     }
 
 class GetProjectMeetingsInput(BaseModel):

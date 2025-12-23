@@ -1,9 +1,10 @@
+
 import json
 import logging
 from typing import TypedDict, Annotated, Literal, List, Optional
 import operator
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
+
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, AnyMessage
@@ -13,7 +14,7 @@ from ...models.models import call_llm
 from ...rag.retriever import retrieve, format_retrieved_documents
 from .api_tools import ALL_API_TOOLS
 
-load_dotenv()
+
 
 logger = logging.getLogger(__name__)
 

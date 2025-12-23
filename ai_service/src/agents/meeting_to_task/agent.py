@@ -2,11 +2,10 @@ import logging
 import json
 import warnings
 from typing import List, Optional
-# Save transcript to file
-import os
+import os # Ensure os is imported as it is used
 from pathlib import Path
 
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
 # Suppress Pydantic deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic")
@@ -27,9 +26,6 @@ from .tools import (
     send_notification
 )
 from ...models.models import call_llm
-
-# Load environment variables
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -108,53 +104,19 @@ class MeetingToTaskAgent:
         logger.info("\n[NODE 1] Đang chuyển đổi âm thanh thành văn bản...")
         logger.info('='*100)
         
-        # Create transcripted_meeting folder if not exists
-        transcript_dir = Path("transcripted_meeting")
-        transcript_dir.mkdir(exist_ok=True)
+        # In production: Audio should be downloaded from S3 or passed as bytes.
+        # Here we assume audio_file_path is accessible (e.g. shared volume or local dev)
         
-        # Generate filename from audio path
-        audio_name = Path(state['audio_file_path']).stem
-        transcript_file = transcript_dir / f"{audio_name}_transcript.txt"
+        logger.info(f"  🎤 Transcribing audio: {state['audio_file_path']}")
         
-        # Check if transcript already exists
-        if transcript_file.exists():
-            logger.info(f"  📖 Found existing transcript: {transcript_file}")
-            with open(transcript_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Check if it belongs to this audio file
-            lines = content.split('\n', 1)
-            if len(lines) >= 1 and lines[0].startswith('# Audio: '):
-                saved_audio_path = lines[0][9:]  # Remove '# Audio: '
-                if saved_audio_path == state['audio_file_path']:
-                    transcript = lines[1] if len(lines) > 1 else ""
-                else:
-                    transcript = self._transcribe_and_save(state, transcript_file)
-            else:
-                # Old format without header, assume it's correct
-                transcript = content
-        else:
-            logger.info(f"  🎤 Transcribing audio: {state['audio_file_path']}")
-            transcript = self._transcribe_and_save(state, transcript_file)
-        
-        return {'transcript': transcript}
-    
-    def _transcribe_and_save(self, state: AgentState, transcript_file: Path) -> str:
-        """Helper method to transcribe audio and save with metadata"""
         transcript = transcribe_audio(
             state['audio_file_path'], 
             provider='gemini', 
             use_mock=False
         )
         
-        # Save transcript with audio path header
-        with open(transcript_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Audio: {state['audio_file_path']}\n")
-            f.write(transcript)
-        
-        logger.info(f"  💾 Saved transcript to: {transcript_file}")
         logger.info(f"  ✅ Transcript: {len(transcript)} ký tự")
-        return transcript
+        return {'transcript': transcript}
     
     def _analysis(self, state: AgentState):
         """Node 2: Phân tích và tạo MoM + Action Items"""
@@ -267,8 +229,8 @@ class MeetingToTaskAgent:
         # (e.g., 'username'/'userId' from the backend vs 'name'/'id' from demo data).
         user_mapping = {}
         for p in participants:
-            username = p.get('username') or p.get('name', '')
-            user_id = p.get('userId') or p.get('id')
+            username = p.get('name', '')
+            user_id = p.get('id')
             if username and user_id:
                 user_mapping[username.lower()] = user_id
         
