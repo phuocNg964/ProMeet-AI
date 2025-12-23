@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Meet Clone V5 (Auto Record)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .btn-control { @apply p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-white transition-all; }
+        .btn-red { @apply bg-red-600 hover:bg-red-700 text-white; }
+        .tab-active { @apply border-b-2 border-blue-600 text-blue-600; }
+        .tab-inactive { @apply text-gray-500 hover:text-gray-700; }
+        
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .recording-active {
+            @apply bg-red-600 text-white;
+            animation: pulse-red 2s infinite;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans text-white overflow-hidden">
+
+    <div id="joinOverlay" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center transition-all">
+        <div class="bg-white text-gray-900 rounded-xl shadow-2xl p-8 w-full max-w-md space-y-4">
+            <h2 class="text-2xl font-bold text-center">Tham gia cuộc họp</h2>
+            <div class="aspect-video bg-black rounded-lg overflow-hidden relative group">
+                <video id="previewVideo" autoplay muted playsinline class="w-full h-full object-cover scale-x-[-1]"></video>
+                <div class="absolute bottom-2 left-2 text-white text-xs bg-black/50 px-2 py-1 rounded">Camera Preview</div>
+            </div>
+            <div class="space-y-3">
+                <input type="text" id="usernameInput" placeholder="Tên hiển thị (VD: Sơn)" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50">
+                <input type="text" id="roomInput" value="meeting-1" placeholder="Mã phòng" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50">
+            </div>
+            <button id="joinButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition transform active:scale-95 shadow-lg">Vào ngay</button>
+        </div>
+    </div>
+
+    <div class="flex-1 flex overflow-hidden relative">
+        <main class="flex-1 flex flex-col items-center justify-center p-4 relative bg-gray-900" id="videoArea">
+            
+            <div id="recBanner" class="hidden absolute top-4 z-20 bg-red-600 text-white px-4 py-1 rounded-full shadow-lg flex items-center gap-2">
+                <div class="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+                <span class="text-xs font-bold uppercase tracking-wider">Đang Ghi Hình Cuộc Họp</span>
+            </div>
+
+            <div class="w-full max-w-6xl aspect-video bg-gray-800 rounded-2xl overflow-hidden shadow-2xl relative border border-gray-700 flex items-center justify-center group">
+                <p id="waitingText" class="text-gray-400 group-hover:scale-110 transition-transform">Đang đợi người khác tham gia...</p>
+                <video id="mainDisplayVideo" autoplay playsinline class="absolute inset-0 w-full h-full object-contain hidden"></video>
+                <span id="mainLabel" class="absolute bottom-4 left-4 bg-black/60 px-3 py-1 rounded-full text-sm backdrop-blur-sm hidden">Người khác</span>
+            </div>
+            
+            <div class="absolute bottom-6 right-6 w-48 sm:w-72 aspect-video bg-black rounded-xl overflow-hidden shadow-xl border-2 border-gray-600 z-10 hover:scale-105 transition-transform duration-300">
+                <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover scale-x-[-1]"></video>
+                <span class="absolute bottom-2 left-2 text-xs bg-black/60 px-2 rounded backdrop-blur-sm">Bạn</span>
+            </div>
+            
+            <canvas id="recorderCanvas" width="1280" height="720" class="hidden"></canvas>
+        </main>
+
+        <aside id="sidebar" class="w-80 bg-white text-gray-900 border-l border-gray-300 flex flex-col transform translate-x-full transition-transform duration-300 absolute right-0 top-0 bottom-0 z-30 shadow-2xl">
+            <div class="flex border-b">
+                <button id="tabChatBtn" class="flex-1 py-3 font-medium text-sm tab-active transition-colors">Trò chuyện</button>
+                <button id="tabFileBtn" class="flex-1 py-3 font-medium text-sm tab-inactive transition-colors">File P2P</button>
+                <button id="closeSidebar" class="px-4 text-gray-500 hover:bg-gray-100">✕</button>
+            </div>
+            <div id="chatContent" class="flex-1 flex flex-col p-4 h-full">
+                <div id="chatMessages" class="flex-1 overflow-y-auto space-y-3 mb-4 pr-2 text-sm no-scrollbar">
+                    <div class="text-center text-gray-400 text-xs mt-4">Cuộc trò chuyện bắt đầu tại đây</div>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="chatInput" placeholder="Nhập tin nhắn..." class="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:border-blue-500 bg-gray-50" autocomplete="off">
+                    <button id="sendChatBtn" class="bg-blue-600 text-white rounded-full p-2 hover:bg-blue-700">
+                        <svg class="w-5 h-5 transform rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="fileContent" class="flex-1 flex flex-col p-4 hidden">
+                <div id="fileListContainer" class="flex-1 overflow-y-auto space-y-2 mb-4">
+                    <div class="text-center text-gray-400 text-sm mt-10">Chưa có file nào.</div>
+                </div>
+                <div class="border-t pt-4">
+                    <label class="block w-full text-center py-2 px-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <span class="text-sm text-gray-600">Chọn file để chia sẻ</span>
+                        <input type="file" id="fileInput" class="hidden">
+                    </label>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <footer class="bg-gray-800/90 backdrop-blur p-4 flex justify-center items-center gap-4 z-20 border-t border-gray-700">
+        <button id="btnMic" class="btn-control tooltip" title="Bật/Tắt Mic"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v3a3 3 0 01-3 3z"></path></svg></button>
+        <button id="btnCam" class="btn-control tooltip" title="Bật/Tắt Camera"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg></button>
+        <button id="btnShare" class="btn-control hover:bg-blue-600 tooltip" title="Chia sẻ màn hình"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></button>
+        
+        <button id="btnRecord" class="btn-control hover:bg-gray-600 tooltip group relative" title="Ghi lại cuộc họp">
+            <div class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping hidden" id="recIndicator"></div>
+            <svg class="w-6 h-6 text-red-500 group-hover:text-red-400" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg>
+        </button>
+
+        <button id="btnSidebar" class="btn-control relative hover:bg-blue-600" title="Chat & File"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg><span id="badge" class="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full hidden border-2 border-gray-800"></span></button>
+        <button id="btnEnd" class="btn-control btn-red ml-4" title="Kết thúc"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+    </footer>
+
+    <div id="notifPopup" class="fixed top-4 right-4 bg-white text-gray-900 p-4 rounded-xl shadow-2xl z-50 hidden max-w-sm border-l-4 border-blue-600 animate-slide-in">
+        <h4 class="font-bold mb-1">Yêu cầu tải file</h4>
+        <p id="notifMsg" class="text-sm mb-3 text-gray-600">Ai đó muốn tải...</p>
+        <div class="flex gap-2">
+            <button id="btnAccept" class="flex-1 bg-blue-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">Cho phép</button>
+            <button id="btnDeny" class="flex-1 bg-gray-100 text-gray-700 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-200">Từ chối</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let localStream, screenStream, remoteStream; 
+        let myUsername = "", currentRoom = "";
+        let peerConnection; 
+        let isScreenSharing = false;
+        let videoSender = null;
+        let myFiles = [];
+
+        // --- BIẾN RECORDING ---
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let canvasInterval;
+        let audioContext;
+        let destAudioNode;
+
+        // DOM
+        const localVideo = document.getElementById('localVideo');
+        const mainDisplayVideo = document.getElementById('mainDisplayVideo');
+        const mainLabel = document.getElementById('mainLabel');
+        const waitingText = document.getElementById('waitingText');
+        const sidebar = document.getElementById('sidebar');
+        const recBanner = document.getElementById('recBanner');
+        const recorderCanvas = document.getElementById('recorderCanvas');
+
+        // 1. SETUP & AUTO JOIN
+        window.onload = async () => {
+            try {
+                // Xin quyền Camera trước
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('previewVideo').srcObject = localStream;
+                localVideo.srcObject = localStream;
+
+                // --- ĐOẠN CODE MỚI THÊM VÀO ---
+                // Check URL xem có tham số room và name không
+                const params = new URLSearchParams(window.location.search);
+                const urlRoom = params.get('room');
+                const urlName = params.get('name');
+
+                if (urlRoom && urlName) {
+                    console.log("Auto joining room:", urlRoom, "as", urlName);
+                    
+                    // Điền dữ liệu vào input
+                    document.getElementById('usernameInput').value = urlName;
+                    document.getElementById('roomInput').value = urlRoom;
+
+                    // Ẩn overlay nhập liệu đi
+                    document.getElementById('joinOverlay').classList.add('opacity-0', 'pointer-events-none');
+
+                    // Thực hiện Join luôn
+                    myUsername = urlName;
+                    currentRoom = urlRoom;
+                    socket.emit('join_room', { username: myUsername, room: currentRoom });
+                }
+                // ------------------------------
+
+            } catch (e) { 
+                console.error(e);
+                alert("Không thể truy cập Camera/Mic! Hãy kiểm tra quyền trình duyệt."); 
+            }
+        };
+
+        // --- 2. CHỨC NĂNG RECORDING MỚI (CANVAS MIXING) ---
+        document.getElementById('btnRecord').onclick = function() {
+            if (isRecording) stopRecording(); else startCanvasRecording();
+        };
+
+        async function startCanvasRecording() {
+            if (!localStream) return alert("Chưa có Camera để quay!");
+
+            // A. TRỘN ÂM THANH (Audio Mixing)
+            audioContext = new AudioContext();
+            destAudioNode = audioContext.createMediaStreamDestination();
+
+            // 1. Lấy tiếng của mình (Mic)
+            if (localStream.getAudioTracks().length > 0) {
+                const localSrc = audioContext.createMediaStreamSource(localStream);
+                localSrc.connect(destAudioNode);
+            }
+
+            // 2. Lấy tiếng của người kia (Loa)
+            if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+                const remoteSrc = audioContext.createMediaStreamSource(remoteStream);
+                remoteSrc.connect(destAudioNode);
+            }
+
+            // B. TRỘN HÌNH ẢNH (Canvas Drawing Loop)
+            const ctx = recorderCanvas.getContext('2d');
+            
+            // Chạy vòng lặp vẽ 30 hình/giây
+            canvasInterval = setInterval(() => {
+                // 1. Vẽ nền đen
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, recorderCanvas.width, recorderCanvas.height);
+
+                // 2. Vẽ Video Chính (Người kia hoặc Màn hình share)
+                if (mainDisplayVideo.srcObject && !mainDisplayVideo.classList.contains('hidden')) {
+                    // Vẽ full màn hình
+                    ctx.drawImage(mainDisplayVideo, 0, 0, recorderCanvas.width, recorderCanvas.height);
+                } else {
+                    // Chưa có ai thì hiện chữ
+                    ctx.fillStyle = '#555';
+                    ctx.font = '40px Arial';
+                    ctx.textAlign = "center";
+                    ctx.fillText("Waiting for participants...", recorderCanvas.width / 2, recorderCanvas.height / 2);
+                }
+
+                // 3. Vẽ Video Của Mình (Góc dưới phải - Picture in Picture)
+                const pipW = 320; // Chiều rộng PiP
+                const pipH = 180; // Chiều cao PiP (16:9)
+                const padding = 20;
+                
+                // Lưu trạng thái
+                ctx.save();
+                // Dịch chuyển canvas để vẽ lật ngược (Mirror effect cho giống gương)
+                ctx.translate(recorderCanvas.width - padding, recorderCanvas.height - padding);
+                ctx.scale(-1, 1); 
+                // Vẽ video
+                ctx.drawImage(localVideo, 0, -pipH, pipW, pipH);
+                ctx.restore();
+
+                // Vẽ viền trắng cho đẹp
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(recorderCanvas.width - pipW - padding, recorderCanvas.height - pipH - padding, pipW, pipH);
+
+            }, 33); // ~30 FPS
+
+            // C. BẮT ĐẦU GHI TỪ CANVAS & AUDIO MIXED
+            const canvasStream = recorderCanvas.captureStream(30);
+            const finalStream = new MediaStream([
+                ...canvasStream.getVideoTracks(),
+                ...destAudioNode.stream.getAudioTracks() // Âm thanh đã trộn
+            ]);
+
+            mediaRecorder = new MediaRecorder(finalStream, { mimeType: 'video/webm' });
+            recordedChunks = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = saveVideoFile;
+
+            mediaRecorder.start();
+            isRecording = true;
+
+            // Update UI
+            document.getElementById('btnRecord').classList.add('recording-active');
+            document.getElementById('recIndicator').classList.remove('hidden');
+            recBanner.classList.remove('hidden');
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            mediaRecorder.stop();
+            clearInterval(canvasInterval); // Dừng vẽ
+            if (audioContext) audioContext.close(); // Dừng xử lý âm thanh
+
+            isRecording = false;
+            document.getElementById('btnRecord').classList.remove('recording-active');
+            document.getElementById('recIndicator').classList.add('hidden');
+            recBanner.classList.add('hidden');
+        }
+
+        function saveVideoFile() {
+            // 1. Tạo Blob từ dữ liệu đã ghi
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            
+            // 2. Chuẩn bị dữ liệu gửi đi
+            const formData = new FormData();
+            // 'file' phải khớp với tên tham số trong FastAPI (file: UploadFile)
+            formData.append("file", blob, `recording_${currentRoom}.webm`);
+
+            // Hiển thị thông báo đang upload (Bồ có thể làm UI đẹp hơn sau)
+            const btnRecord = document.getElementById('btnRecord');
+            const originalHtml = btnRecord.innerHTML;
+            btnRecord.innerHTML = '<span class="text-xs font-bold animate-pulse">UPLOADING...</span>';
+            btnRecord.disabled = true;
+
+            // 3. Gửi lên Backend (FastAPI đang chạy port 8000)
+            // currentRoom chính là meeting_id
+            const API_URL = `http://localhost:8000/api/v1/meetings/${currentRoom}/recording`;
+
+            fetch(API_URL, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert("✅ Đã lưu video vào hệ thống thành công!");
+                } else {
+                    alert("❌ Lỗi khi lưu video lên server!");
+                }
+            })
+            .catch(error => {
+                console.error("Upload error:", error);
+                alert("❌ Không kết nối được với server!");
+            })
+            .finally(() => {
+                // Reset nút bấm
+                btnRecord.innerHTML = originalHtml;
+                btnRecord.disabled = false;
+                
+                // (Tùy chọn) Vẫn cho tải về máy để backup
+                // const url = URL.createObjectURL(blob);
+                // const a = document.createElement('a');
+                // a.style.display = 'none';
+                // a.href = url;
+                // a.download = `Backup_${currentRoom}.webm`;
+                // document.body.appendChild(a);
+                // a.click();
+            });
+        }
+
+        // --- CÁC PHẦN LOGIC KHÁC GIỮ NGUYÊN (Copy từ V4) ---
+        // 2. SIDEBAR
+        function switchTab(tab) {
+            const chatC = document.getElementById('chatContent'), fileC = document.getElementById('fileContent');
+            const btnC = document.getElementById('tabChatBtn'), btnF = document.getElementById('tabFileBtn');
+            if(tab === 'chat') { chatC.classList.remove('hidden'); fileC.classList.add('hidden'); btnC.classList.add('tab-active'); btnC.classList.remove('tab-inactive'); btnF.classList.add('tab-inactive'); btnF.classList.remove('tab-active'); }
+            else { chatC.classList.add('hidden'); fileC.classList.remove('hidden'); btnC.classList.add('tab-inactive'); btnC.classList.remove('tab-active'); btnF.classList.add('tab-active'); btnF.classList.remove('tab-inactive'); }
+        }
+        document.getElementById('tabChatBtn').onclick = () => switchTab('chat');
+        document.getElementById('tabFileBtn').onclick = () => switchTab('file');
+        document.getElementById('btnSidebar').onclick = () => { sidebar.classList.toggle('translate-x-full'); document.getElementById('badge').classList.add('hidden'); };
+        document.getElementById('closeSidebar').onclick = () => sidebar.classList.add('translate-x-full');
+
+        // 3. VIDEO CALL
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        socket.on('room_joined', (data) => { updateFileList(data.availableFiles); if(data.room_users.length > 0) startCall(data.room_users[0].sid); });
+
+        function handleRemoteStream(stream) {
+            remoteStream = stream;
+            if (!isScreenSharing) {
+                mainDisplayVideo.srcObject = remoteStream;
+                mainDisplayVideo.classList.remove('hidden');
+                waitingText.classList.add('hidden');
+                mainLabel.classList.remove('hidden');
+                mainLabel.innerText = "Người khác";
+            }
+        }
+
+        function startCall(targetSid) {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+            localStream.getTracks().forEach(track => { const sender = peerConnection.addTrack(track, localStream); if (track.kind === 'video') videoSender = sender; });
+            peerConnection.onicecandidate = e => { if(e.candidate) socket.emit('video_ice_candidate', { candidate: e.candidate, target_sid: targetSid }); };
+            peerConnection.ontrack = e => handleRemoteStream(e.streams[0]);
+            peerConnection.createOffer().then(o => { peerConnection.setLocalDescription(o); socket.emit('video_offer', { offer: o, target_sid: targetSid }); });
+        }
+        socket.on('video_offer', async (data) => {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+            localStream.getTracks().forEach(track => { const sender = peerConnection.addTrack(track, localStream); if (track.kind === 'video') videoSender = sender; });
+            peerConnection.onicecandidate = e => { if(e.candidate) socket.emit('video_ice_candidate', { candidate: e.candidate, target_sid: data.sender_sid }); };
+            peerConnection.ontrack = e => handleRemoteStream(e.streams[0]);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const ans = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(ans);
+            socket.emit('video_answer', { answer: ans, target_sid: data.sender_sid });
+        });
+        socket.on('video_answer', d => peerConnection.setRemoteDescription(new RTCSessionDescription(d.answer)));
+        socket.on('video_ice_candidate', d => peerConnection.addIceCandidate(new RTCIceCandidate(d.candidate)));
+
+        // Screen Share
+        document.getElementById('btnShare').onclick = async function() { if (isScreenSharing) stopScreenShare(); else startScreenShare(); };
+        async function startScreenShare() {
+            try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const screenTrack = screenStream.getVideoTracks()[0];
+                if (videoSender) await videoSender.replaceTrack(screenTrack);
+                mainDisplayVideo.srcObject = screenStream;
+                mainDisplayVideo.classList.remove('hidden'); mainDisplayVideo.muted = true; waitingText.classList.add('hidden'); mainLabel.innerText = "Bạn đang trình bày";
+                document.getElementById('btnShare').classList.add('bg-blue-600', 'text-white');
+                isScreenSharing = true; screenTrack.onended = stopScreenShare;
+            } catch (err) {}
+        }
+        function stopScreenShare() {
+            if (!isScreenSharing) return;
+            screenStream.getTracks().forEach(t => t.stop());
+            const cameraTrack = localStream.getVideoTracks()[0]; if (videoSender) videoSender.replaceTrack(cameraTrack);
+            if (remoteStream && remoteStream.active) { mainDisplayVideo.srcObject = remoteStream; mainLabel.innerText = "Người khác"; mainDisplayVideo.muted = false; } 
+            else { mainDisplayVideo.classList.add('hidden'); waitingText.classList.remove('hidden'); mainLabel.classList.add('hidden'); }
+            document.getElementById('btnShare').classList.remove('bg-blue-600', 'text-white'); isScreenSharing = false;
+        }
+
+        // Chat & File
+        const chatInput = document.getElementById('chatInput'), chatMessages = document.getElementById('chatMessages');
+        document.getElementById('sendChatBtn').onclick = sendChat; chatInput.onkeypress = (e) => { if(e.key === 'Enter') sendChat(); };
+        function sendChat() { const msg = chatInput.value.trim(); if(!msg) return; socket.emit('send_chat_message', { message: msg }); chatInput.value = ''; }
+        socket.on('receive_chat_message', (data) => {
+            const div = document.createElement('div'); div.className = `flex flex-col ${data.is_me ? 'items-end' : 'items-start'}`;
+            div.innerHTML = `<span class="text-xs text-gray-500 mb-1">${data.is_me ? 'Bạn' : data.sender}</span><div class="${data.is_me ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'} px-4 py-2 rounded-2xl max-w-[80%] text-sm shadow-sm">${data.message}</div>`;
+            chatMessages.appendChild(div); chatMessages.scrollTop = chatMessages.scrollHeight; if (sidebar.classList.contains('translate-x-full')) document.getElementById('badge').classList.remove('hidden');
+        });
+
+        document.getElementById('fileInput').onchange = (e) => { myFiles = Array.from(e.target.files); socket.emit('update_files', { files: myFiles.map((f, i) => ({ name: f.name, size: f.size, fileIndex: i })) }); };
+        socket.on('update_file_list', data => updateFileList(data.availableFiles));
+        function updateFileList(filesMap) {
+            const container = document.getElementById('fileListContainer'); container.innerHTML = '';
+            for (const [user, files] of Object.entries(filesMap)) { if(!files.length) continue; const header = document.createElement('div'); header.className = 'text-xs font-bold text-gray-500 uppercase mt-2'; header.textContent = user; container.appendChild(header); files.forEach(f => { const item = document.createElement('div'); item.className = 'bg-gray-50 border p-3 rounded-lg flex justify-between mb-2'; item.innerHTML = `<div class="truncate w-32 font-medium text-sm">${f.name}</div>`; if (user !== myUsername) { const btn = document.createElement('button'); btn.className = 'bg-blue-100 text-blue-600 px-2 rounded text-xs'; btn.innerText = 'Tải'; btn.onclick = () => socket.emit('request_file', { owner: user, fileName: f.name, fileIndex: f.fileIndex }); item.appendChild(btn); } container.appendChild(item); }); }
+        }
+        let pendingRequest = null;
+        socket.on('file_permission_request', d => { pendingRequest = d; document.getElementById('notifMsg').innerText = `${d.requester} tải ${d.fileName}`; document.getElementById('notifPopup').classList.remove('hidden'); });
+        document.getElementById('btnAccept').onclick = () => { document.getElementById('notifPopup').classList.add('hidden'); socket.emit('file_permission_response', { requestId: pendingRequest.requestId, accepted: true, fileIndex: pendingRequest.fileIndex }); startFileSender(pendingRequest.requestId, pendingRequest.fileIndex); };
+        function startFileSender(tid, idx) { const pc = new RTCPeerConnection(rtcConfig); const dc = pc.createDataChannel("file"); const file = myFiles[idx]; dc.onopen = () => { dc.send(JSON.stringify({ name: file.name, size: file.size, type: file.type })); const reader = new FileReader(); let offset = 0; reader.onload = e => { dc.send(e.target.result); offset += e.target.result.byteLength; if(offset < file.size) readSlice(offset); }; const readSlice = o => reader.readAsArrayBuffer(file.slice(o, o+16384)); readSlice(0); }; pc.onicecandidate = e => { if(e.candidate) socket.emit('file_transfer_ice', { candidate: e.candidate, transferId: tid }); }; pc.createOffer().then(o => { pc.setLocalDescription(o); socket.emit('file_transfer_offer', { offer: o, transferId: tid }); }); socket.on('file_transfer_answer', d => { if(d.transferId === tid) pc.setRemoteDescription(new RTCSessionDescription(d.answer)); }); socket.on('file_transfer_ice', d => { if(d.transferId === tid) pc.addIceCandidate(new RTCIceCandidate(d.candidate)); }); }
+        socket.on('file_permission_result', data => { if(data.accepted) { const pc = new RTCPeerConnection(rtcConfig); pc.ondatachannel = e => { const dc = e.channel; let rec = [], size = 0, meta = {}; document.getElementById('progressContainer').classList.remove('hidden'); dc.onmessage = evt => { if(typeof evt.data === 'string') meta = JSON.parse(evt.data); else { rec.push(evt.data); size += evt.data.byteLength; document.getElementById('progressBar').style.width = Math.round(size/meta.size*100) + "%"; if(size === meta.size) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(rec, { type: meta.type })); a.download = meta.name; a.click(); document.getElementById('progressContainer').classList.add('hidden'); } } }; }; pc.onicecandidate = e => { if(e.candidate) socket.emit('file_transfer_ice', { candidate: e.candidate, transferId: data.requestId }); }; socket.on('file_transfer_offer', d => { if(d.transferId === data.requestId) { pc.setRemoteDescription(new RTCSessionDescription(d.offer)); pc.createAnswer().then(a => { pc.setLocalDescription(a); socket.emit('file_transfer_answer', { answer: a, transferId: data.requestId }); }); }}); socket.on('file_transfer_ice', d => { if(d.transferId === data.requestId) pc.addIceCandidate(new RTCIceCandidate(d.candidate)); }); sidebar.classList.remove('translate-x-full'); switchTab('file'); }});
+
+        // Controls
+        document.getElementById('btnMic').onclick = function() { localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled; this.classList.toggle('btn-red'); };
+        document.getElementById('btnCam').onclick = function() { localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled; this.classList.toggle('btn-red'); };
+        document.getElementById('btnEnd').onclick = () => location.reload();
+    </script>
+</body>
+</html>
