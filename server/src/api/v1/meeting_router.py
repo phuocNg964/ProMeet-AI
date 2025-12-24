@@ -16,6 +16,9 @@ from src.services.meeting_service import MeetingService
 from src.models.meeting import Meeting
 from src.models.user import User
 from src.repositories.task_repository import TaskRepository
+from src.models.task import Task
+from uuid import uuid4
+from datetime import datetime
 
 
 from src.services.ai_service import AIService
@@ -133,7 +136,7 @@ def read_meetings_by_project(project_id: str, current_user: user_schemas.UserOut
     return meetings
 
 @router.post("/{meeting_id}/analyze")
-async def analyze_meeting(
+def analyze_meeting(
     meeting_id: str, 
     background_tasks: BackgroundTasks,
     background: bool = True,
@@ -143,6 +146,7 @@ async def analyze_meeting(
 ):
     """
     API kích hoạt Trí tuệ nhân tạo phân tích cuộc họp.
+    NOTE: Changed to 'def' (sync) to avoid blocking async loop when using sync 'requests'.
     """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
@@ -192,29 +196,49 @@ async def analyze_meeting(
                 background=False,
                 skip_review=skip_review 
             )
+            
+            # FIX: Persist Transcript & Provisional Summary immediately
+            # This ensures that even if we are in "Review" mode, the data is saved.
+            if result.get("status") in ["completed", "waiting_review"]:
+                 if result.get("transcript"):
+                     meeting.transcript = result.get("transcript")
+                 if result.get("summary"):
+                     meeting.summary = result.get("summary")
+                 db.commit()
+                 db.refresh(meeting)
+                 logger.info(f"✅ [Sync] Saved Provisional Transcript for Meeting {meeting_id}")
+            
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{meeting_id}/confirm")
-async def confirm_meeting_analysis(
+def confirm_meeting_analysis(
     meeting_id: str,
     confirmation: meeting_schemas.MeetingConfirmRequest,
     db: Session = Depends(get_db),
     authorization: str = Header(None)
 ):
-    """Confirm analysis results and execute tasks creation."""
+    """
+    Confirm analysis results.
+    NOTE: Changed to 'def' (sync) to run in threadpool, avoiding deadlock when Agent calls back to /tasks.
+    """
     token = authorization.replace("Bearer ", "") if authorization else None
     
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
          raise HTTPException(status_code=404, detail="Meeting not found")
          
-    # Build metadata
+    # Update local summary immediately
+    if confirmation.updated_summary:
+        meeting.summary = confirmation.updated_summary
+        db.commit()
+         
+    # Build metadata for Agent
     attendees = db.query(User).filter(User.id.in_(meeting.attendee_ids)).all()
     participants_info = [{"id": str(u.id), "name": u.name, "email": u.email} for u in attendees]
     
-    # Construct Payload for AI Service (matching AI Service Schema)
+    # Construct Payload for AI Service
     ai_payload = {
         "meeting_id": meeting_id,
         "updated_summary": confirmation.updated_summary,
@@ -227,14 +251,8 @@ async def confirm_meeting_analysis(
     
     ai_service = AIService()
     try:
+        # Call Agent to finish the job (create tasks via callback)
         result = ai_service.confirm_meeting(ai_payload, token)
-        
-        # Update Local DB with confirmed results (Summary/Transcript if needed)
-        if result.get("status") == "completed":
-            if result.get("summary"):
-                meeting.summary = result.get("summary")
-            db.commit()
-            
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
