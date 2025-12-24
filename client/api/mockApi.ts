@@ -26,11 +26,7 @@ const meetingServerApi = axios.create({
     headers: { 'Content-Type': 'application/json' }
 });
 
-// 3. Server AI Trợ lý dự án (Project Manager Assistant - Port 8002)
-const projectServerApi = axios.create({
-    baseURL: 'http://localhost:8002',
-    headers: { 'Content-Type': 'application/json' }
-});
+
 
 // INTERCEPTOR: Tự động gắn Token bảo mật vào Header trước khi gửi request lên Server
 api.interceptors.request.use((config) => {
@@ -279,10 +275,23 @@ export async function deleteMeeting(meetingId: string): Promise<void> {
  * Kích hoạt phân tích AI cho cuộc họp (Tạo tóm tắt và ghi chú).
  * Đây là Background Task của Backend.
  */
-export async function triggerAiAnalysis(meetingId: string): Promise<any> {
-    const res = await api.post(`/meetings/${meetingId}/analyze`);
+export async function triggerAiAnalysis(meetingId: string, background: boolean = true, skipReview: boolean = true): Promise<any> {
+    // Send background and skip_review as query params
+    const res = await api.post(`/meetings/${meetingId}/analyze?background=${background}&skip_review=${skipReview}`);
     return res.data;
 }
+
+/** Xác nhận kết quả phân tích AI và tạo task (Human-in-the-loop) */
+export async function confirmAiAnalysis(meetingId: string, updatedSummary: string, updatedTasks: any[]): Promise<any> {
+    const payload = {
+        meeting_id: meetingId,
+        updated_summary: updatedSummary,
+        updated_action_items: updatedTasks
+    };
+    const res = await api.post(`/meetings/${meetingId}/confirm`, payload);
+    return res.data;
+}
+
 
 /** Xử lý Transcript để tự động tạo danh sách công việc (Action Items) */
 export async function processTranscript(meetingId: string, transcript: string): Promise<Task[]> {
@@ -294,22 +303,19 @@ export async function processTranscript(meetingId: string, transcript: string): 
 
 /** Chat trực tiếp với trợ lý AI Meetly */
 export async function chatWithAI(prompt: string): Promise<string> {
-    const res = await api.post('/ai/chat', { transcript: prompt });
-    return res.data.transcript;
+    const res = await api.post('/ai/chat', { message: prompt, thread_id: "general" });
+    return res.data.response;
 }
 
 /** 
- * Chat với Trợ lý Quản lý dự án (Port 8002).
- * Trợ lý này có kiến thức sâu về Project hiện tại.
+ * Chat với Trợ lý Quản lý dự án (Project Manager Assistant).
+ * Sử dụng Main Backend Proxy (Port 8000).
  */
 export async function chatWithProjectManager(message: string, projectId?: string, userId?: string): Promise<string> {
-    const token = localStorage.getItem('access_token');
-    const response = await projectServerApi.post('/chat', {
-        message,
-        project_id: projectId,
-        thread_id: "thread_1",
-        user_id: userId || "1",
-        token: token || undefined
+    // API Route: server/src/api/v1/ai_router.py -> /chat
+    const res = await api.post('/ai/chat', {
+        message: message,
+        thread_id: projectId ? `project_${projectId}` : `user_${userId || 'guest'}`
     });
-    return response.data.response;
+    return res.data.response;
 }

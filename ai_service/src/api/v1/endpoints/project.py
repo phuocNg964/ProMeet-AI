@@ -13,7 +13,7 @@ agent_system = AgenticRAG()
 # Note: Re-building graph might be needed if tools depend on init, but they are dynamic.
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_project_manager(
+def chat_project_manager(
     request: ChatRequest,
     authorization: Optional[str] = Header(None)
 ):
@@ -27,7 +27,10 @@ async def chat_project_manager(
             set_request_token(token)
 
         # Prepare input for LangGraph
-        initial_state = {"messages": [HumanMessage(content=request.query)]}
+        initial_state = {
+            "messages": [HumanMessage(content=request.query)],
+            "query": request.query
+        }
         
         # Invoke the graph
         result = agent_system.graph.invoke(initial_state)

@@ -199,6 +199,12 @@ QUY TRÌNH XỬ LÝ (QUAN TRỌNG):
 LUÔN KIỂM TRA:
 - Nếu Tool trả về kết quả: Đọc kỹ. Có cần gọi tool tiếp theo không? Hay đã đủ thông tin để trả lời?
 - Nếu đã đủ thông tin: Hãy viết câu trả lời tổng hợp cuối cùng.
+
+QUY TẮC TRẢ LỜI (RẤT QUAN TRỌNG):
+- **KHÔNG BAO GIỜ** hiển thị ID (UUID) trong câu trả lời cuối cùng cho User. ID chỉ dùng để gọi tool.
+- Thay vì "Dự án ID 1234...", hãy nói "Dự án [Tên Dự Án]".
+- Thay vì "Task ID abc-xyz...", hãy nói "Task [Tên Task]".
+- Tập trung vào thông tin có ý nghĩa: Tên, Trạng thái, Deadline, Phụ trách.
 """
 
         # Build message history

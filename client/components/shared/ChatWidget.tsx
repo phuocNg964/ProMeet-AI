@@ -22,7 +22,7 @@ export default function ChatWidget({ projectId, onRefresh }: { projectId?: strin
   const [isOpen, setIsOpen] = useState(false); // Trạng thái mở/đóng widget
   const [isMinimized, setIsMinimized] = useState(false); // Trạng thái thu nhỏ/phóng to
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', sender: 'bot', text: 'Hello! 👋 I am **Meetly Assistant**. I can help you manage tasks, analyze meetings, or answer any questions about this project.', timestamp: new Date() }
+    { id: '1', sender: 'bot', text: 'Xin chào! 👋 Tôi là **Trợ lý Meetly**. Tôi có thể giúp bạn quản lý công việc, phân tích cuộc họp hoặc trả lời bất kỳ câu hỏi nào về dự án này.', timestamp: new Date() }
   ]);
   const [inputValue, setInputValue] = useState(''); // Giá trị nhập vào
   const [isLoading, setIsLoading] = useState(false); // Trạng thái đang đợi AI phản hồi

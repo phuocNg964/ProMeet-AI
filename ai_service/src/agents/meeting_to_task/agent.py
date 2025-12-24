@@ -102,7 +102,6 @@ class MeetingToTaskAgent:
             return {'transcript': state['transcript']}
             
         logger.info("\n[NODE 1] Đang chuyển đổi âm thanh thành văn bản...")
-        logger.info('='*100)
         
         # In production: Audio should be downloaded from S3 or passed as bytes.
         # Here we assume audio_file_path is accessible (e.g. shared volume or local dev)
@@ -119,9 +118,8 @@ class MeetingToTaskAgent:
         return {'transcript': transcript}
     
     def _analysis(self, state: AgentState):
-        """Node 2: Phân tích và tạo MoM + Action Items"""
-        logger.info("\n[NODE 2] Đang phân tích và tạo MoM...")
-        logger.info('='*100)
+        """Node 2: Phân tích và tạo Summary + Action Items"""
+        logger.info("\n[NODE 2] Đang phân tích và tạo Summary...")
         
         # Pass the entire metadata object to the prompt to make the agent more robust
         # to changes in the metadata structure.
@@ -151,14 +149,13 @@ class MeetingToTaskAgent:
             logger.info(f"     - {item.get('assignee', 'N/A')}: {item.get('title', '')[:40]}...")
         
         return {
-            'mom': response.summary,
+            'summary': response.summary,
             'action_items': action_items_list,
         }
     
     def _reflection(self, state: AgentState):
         """Node 3: Tự kiểm tra và phát hiện lỗi"""
         logger.info("\n[NODE 3] Đang tự kiểm tra chất lượng...")
-        logger.info('='*100)
         
         # Pass the entire metadata object to the prompt for context.
         metadata_str = json.dumps(state.get('meeting_metadata', {}), indent=2, ensure_ascii=False)
@@ -167,7 +164,7 @@ class MeetingToTaskAgent:
         messages = [
             HumanMessage(content=REFLECTION_PROMPT.format(
                 metadata=metadata_str,
-                mom=state['mom'],
+                summary=state['summary'],
                 action_items=action_items_str
             ))
         ]
@@ -181,8 +178,7 @@ class MeetingToTaskAgent:
     
     def _refinement(self, state: AgentState):
         """Node 4: Tinh chỉnh dựa trên phản hồi"""
-        logger.info("\n[NODE 4] Tinh chỉnh MoM...")
-        logger.info('='*100)
+        logger.info("\n[NODE 4] Tinh chỉnh Summary...")
         
         # Pass the entire metadata object to the prompt for context.
         metadata_str = json.dumps(state.get('meeting_metadata', {}), indent=2, ensure_ascii=False)
@@ -191,7 +187,7 @@ class MeetingToTaskAgent:
         messages = [
             HumanMessage(content=REFINEMENT_PROMPT.format(
                 metadata=metadata_str,
-                draft_mom=state['mom'],
+                draft_summary=state['summary'],
                 draft_action_items=action_items_str,
                 critique=state['critique'],
                 transcript=state['transcript']
@@ -206,7 +202,7 @@ class MeetingToTaskAgent:
         logger.info(f"  🔄 Revision #{revision_count}")
         
         return {
-            'mom': response.summary,
+            'summary': response.summary,
             'action_items': refined_action_items,
             'revision_count': revision_count
         }
@@ -215,7 +211,7 @@ class MeetingToTaskAgent:
         """Node 5: Tạo tasks trong hệ thống backend"""
         logger.info("\n[NODE 5] Tạo tasks...")
         logger.info('='*100)
-        
+        summary: str
         action_items = state.get('action_items', [])
         meeting_metadata = state.get('meeting_metadata', {})
         participants = meeting_metadata.get('participants', [])
@@ -224,15 +220,14 @@ class MeetingToTaskAgent:
         project_id = meeting_metadata.get('project_id')
         author_user_id = meeting_metadata.get('author_id')
         
-        # Build user_mapping: assignee name (lowercase) -> user ID.
-        # This is made more robust to handle different key names for user info
-        # (e.g., 'username'/'userId' from the backend vs 'name'/'id' from demo data).
         user_mapping = {}
         for p in participants:
-            username = p.get('name', '')
-            user_id = p.get('id')
+            # Try multiple keys for name/username
+            username = p.get('name') or p.get('username') or ''
+            user_id = p.get('id') or p.get('userId')
+            
             if username and user_id:
-                user_mapping[username.lower()] = user_id
+                user_mapping[username.lower().strip()] = user_id
         
         # Call API to create tasks
         tasks = create_tasks(
@@ -250,7 +245,7 @@ class MeetingToTaskAgent:
         logger.info("\n[NODE 6] Gửi notification...")
         logger.info('='*100)
         
-        mom = state.get('mom')
+        summary = state.get('summary')
         action_items = state.get('action_items', [])
         meeting_metadata = state.get('meeting_metadata', {})
         participants = meeting_metadata.get('participants', [])
@@ -287,7 +282,7 @@ class MeetingToTaskAgent:
             email_body = format_email_body_for_assignee(
                 assignee_name=assignee.title(),
                 assignee_task=task,
-                mom=mom,
+                summary=summary,
                 meeting_metadata=meeting_metadata
             )
             
@@ -340,7 +335,7 @@ class MeetingToTaskAgent:
             transcript: (Optional) Transcript text if available
             
         Returns:
-            Tuple[dict, dict]: (current_state, thread_config)
+            Tuple[dict, dict]: (current_state values, thread_config)
         """
         initial_state = {
             'audio_file_path': audio_file_path,
@@ -360,15 +355,15 @@ class MeetingToTaskAgent:
             pass  # Events đã được print trong nodes
 
         current_state = self.graph.get_state(thread)
-        return current_state, thread
+        return current_state.values, thread
     
-    def continue_after_review(self, thread, updated_mom: str = None, 
+    def continue_after_review(self, thread, updated_summary: str = None, 
                               updated_action_items: list = None):
         """Cập nhật state và tiếp tục workflow sau human review"""
-        if updated_mom or updated_action_items:
+        if updated_summary or updated_action_items:
             updates = {}
-            if updated_mom:
-                updates['mom'] = updated_mom
+            if updated_summary:
+                updates['summary'] = updated_summary
             if updated_action_items:
                 updates['action_items'] = updated_action_items
             self.graph.update_state(thread, updates)
