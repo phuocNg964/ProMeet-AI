@@ -6,7 +6,7 @@ import os
 from urllib.parse import urlparse 
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import joinedload 
 from src.core.database import get_db
 from src.core.security import get_current_user
@@ -15,99 +15,101 @@ from src.schemas import user as user_schemas
 from src.services.meeting_service import MeetingService 
 from src.models.meeting import Meeting
 from src.models.user import User
+from src.repositories.task_repository import TaskRepository
 
 
-# --- AI AGENT IMPORT ---
-# Lưu ý: Đảm bảo folder AI nằm trong server và có __init__.py
-try:
-    from AI.src.agents.meeting_to_task.agent import MeetingToTaskAgent
-    print("✅ AI Agent imported successfully")
-    AI_AVAILABLE = True
-    # Khởi tạo Agent 1 lần để dùng chung
-    meeting_agent = MeetingToTaskAgent()
-except ImportError as e:
-    print(f"⚠️ Warning: Could not import AI Agent. AI features will be disabled. Error: {e}")
-    AI_AVAILABLE = False
-    meeting_agent = None
+from src.services.ai_service import AIService
 
 router = APIRouter()
 
 # --- 1. AI BACKGROUND TASKS (XỬ LÝ DỮ LIỆU NGẦM) ---
 
-def _run_ai_analysis_task(meeting_id: str, db: Session):
+from src.core.logger import logger
+from fastapi import Header
+
+def _run_ai_analysis_task(meeting_id: str, db: Session, token: str = None):
     """
     Hàm xử lý phân tích AI chạy ngầm.
     Quy trình: 
     1. Lấy file ghi âm (recording_url).
     2. Chuẩn bị metadata (người tham gia, dự án).
-    3. Trình AI Agent (MeetingToTaskAgent) xử lý bóc tách transcript và tóm tắt.
+    3. Gọi AIService (Client) để gửi yêu cầu sang AI Service.
     4. Cập nhật kết quả ngược lại Database.
     """
-    if not AI_AVAILABLE or not meeting_agent:
-        print("❌ AI Agent not available.")
-        return
+    logger.info(f"🚀 [AI TASK] Starting analysis for Meeting ID: {meeting_id}")
+    task_repo = TaskRepository(db)
+    ai_service = AIService()
 
-    print(f"\n🚀 [AI TASK] Starting analysis for Meeting ID: {meeting_id}")
     try:
         meeting = db.query(Meeting).options(joinedload(Meeting.attendees)).filter(Meeting.id == meeting_id).first()
         if not meeting or not meeting.recording_url:
-            print("❌ Error: No recording URL or meeting not found.")
+            logger.error("❌ Error: No recording URL or meeting not found.")
             return
 
         parsed_url = urlparse(meeting.recording_url)
-        audio_path = parsed_url.path.lstrip('/')
+        # Assuming the url is http://localhost:8000/static/recordings/{meeting_id}.webm
+        # The path part is /static/recordings/{meeting_id}.webm
         
-        possible_paths = [
-            audio_path,
-            os.path.join(os.getcwd(), audio_path),
-            os.path.join(os.getcwd(), 'server', audio_path) if not audio_path.startswith('server') else audio_path
-        ]
+        # Determine strict path relative to server root
+        path = parsed_url.path.lstrip('/')
         
-        final_audio_path = None
-        for p in possible_paths:
-            if os.path.exists(p):
-                final_audio_path = p
-                break
-        
-        if not final_audio_path:
-            # Fallback mock file để test nếu không có file thật
-            mock_fallback = "server/AI/src/agents/meeting_to_task/meeting_audio/meeting001.mp3"
-            if os.path.exists(mock_fallback):
-                final_audio_path = mock_fallback
+        # Check if file exists at the expected location
+        if os.path.exists(path):
+            # FIX: Convert to Absolute Path so AI Service (separate process) can find it
+            final_audio_path = os.path.abspath(path)
+            logger.info(f"✅ Resolved Absolute Path: {final_audio_path}")
+        else:
+            logger.error(f"❌ Error: Audio file not found at {path}")
+            return
 
-        if not final_audio_path: return
+        # Prepare Metadata
+        participants_info = []        
 
-        participants_info = []
-        for user in meeting.attendees:
-            participants_info.append({
-                "userId": user.id, "username": user.username, "email": user.email
-            })
+        # Query all users whose IDs are in the list
+        attendees = db.query(User).filter(User.id.in_(meeting.attendee_ids)).all()
+        
+        for user in attendees:
+            p_info = {
+                "id": str(user.id), "name": user.name, "email": user.email
+            }
+            participants_info.append(p_info)
 
         metadata = {
             "title": meeting.title,
+            "description": meeting.description,
             "id": meeting.id,
             "projectId": meeting.project_id,
+            "project_id": meeting.project_id, # Redundant for safety
+            "author_id": str(meeting.attendee_ids[0]) if meeting.attendee_ids else None, # Assuming first attendee is author if not stored
             "date": str(meeting.start_date),
             "participants": participants_info
         }
 
-        # GỌI AI AGENT ĐỂ XỬ LÝ (Phần tốn nhiều thời gian nhất)
-        result, _ = meeting_agent.run(
+        # GỌI AI SERVICE (Synchronous call to external service)
+        logger.info(f"⏳ Calling AI Service with {len(participants_info)} participants: {[p['name'] for p in participants_info]}")
+        
+        # Background task always skips review
+        ai_result = ai_service.process_meeting(
+            meeting_id=meeting_id,
             audio_file_path=final_audio_path,
             meeting_metadata=metadata,
-            thread_id=meeting_id
+            token=token,
+            background=False, 
+            skip_review=True
         )
         
-        if result:
-            meeting.transcript = result.get("transcript", "")
-            meeting.summary = result.get("mom", "") # mom: Minutes of Meeting (Biên bản cuộc họp)
+        if ai_result:
+            # 1. Update Meeting Content
+            meeting.transcript = ai_result.get("transcript", "")
+            meeting.summary = ai_result.get("summary", "")
+
             db.commit()
-            print(f"✅ [AI TASK] Analysis complete for {meeting_id}")
+            logger.info(f"✅ [AI TASK] Analysis complete. Updated Meeting content.")
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        print(f"❌ [AI TASK] Error: {e}")
+        traceback.print_exc() # Keep fallback trace
+        logger.error(f"❌ [AI TASK] Error: {e}")
     finally:
         db.close()
 
@@ -134,21 +136,108 @@ def read_meetings_by_project(project_id: str, current_user: user_schemas.UserOut
 async def analyze_meeting(
     meeting_id: str, 
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    background: bool = True,
+    skip_review: bool = True,
+    db: Session = Depends(get_db),
+    authorization: str = Header(None) # Extract Auth Token
 ):
     """
     API kích hoạt Trí tuệ nhân tạo phân tích cuộc họp.
-    Thay vì bắt người dùng chờ AI xử lý (vốn rất lâu), 
-    API này sẽ trả về ngay lập tức và đẩy việc xử lý vào Background Tasks.
     """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    # Khởi chạy phân tích ngầm
-    background_tasks.add_task(_run_ai_analysis_task, meeting_id, next(get_db()))
+    # Extract token string
+    token = authorization.replace("Bearer ", "") if authorization else None
     
-    return {"message": "AI analysis started in background", "status": "processing"}
+    if background:
+        # Khởi chạy phân tích ngầm (Background)
+        background_tasks.add_task(_run_ai_analysis_task, meeting_id, next(get_db()), token)
+        return {"message": "AI analysis started in background", "status": "processing"}
+    else:
+        # Run Synchronously (Interactive Mode)
+        # Prepare Logic similar to background task but wait for result
+        if not meeting.recording_url:
+             raise HTTPException(status_code=400, detail="No recording URL.")
+             
+        parsed_url = urlparse(meeting.recording_url)
+        path = parsed_url.path.lstrip('/')
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="Audio file not found")
+            
+        final_audio_path = os.path.abspath(path)
+        
+        # Metadata
+        attendees = db.query(User).filter(User.id.in_(meeting.attendee_ids)).all()
+        participants_info = [{"id": str(u.id), "name": u.name, "email": u.email} for u in attendees]
+        
+        metadata = {
+            "title": meeting.title,
+            "description": meeting.description,
+            "id": meeting.id,
+            "projectId": meeting.project_id,
+            "project_id": meeting.project_id,
+            "author_id": str(meeting.attendee_ids[0]) if meeting.attendee_ids else None,
+            "participants": participants_info
+        }
+        
+        ai_service = AIService()
+        try:
+            result = ai_service.process_meeting(
+                meeting_id=meeting_id,
+                audio_file_path=final_audio_path,
+                meeting_metadata=metadata,
+                token=token,
+                background=False,
+                skip_review=skip_review 
+            )
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{meeting_id}/confirm")
+async def confirm_meeting_analysis(
+    meeting_id: str,
+    confirmation: meeting_schemas.MeetingConfirmRequest,
+    db: Session = Depends(get_db),
+    authorization: str = Header(None)
+):
+    """Confirm analysis results and execute tasks creation."""
+    token = authorization.replace("Bearer ", "") if authorization else None
+    
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+         raise HTTPException(status_code=404, detail="Meeting not found")
+         
+    # Build metadata
+    attendees = db.query(User).filter(User.id.in_(meeting.attendee_ids)).all()
+    participants_info = [{"id": str(u.id), "name": u.name, "email": u.email} for u in attendees]
+    
+    # Construct Payload for AI Service (matching AI Service Schema)
+    ai_payload = {
+        "meeting_id": meeting_id,
+        "updated_summary": confirmation.updated_summary,
+        "updated_action_items": [t.model_dump() for t in confirmation.updated_action_items] if confirmation.updated_action_items else [],
+        
+        "project_id": meeting.project_id,
+        "author_id": str(meeting.attendee_ids[0]) if meeting.attendee_ids else None,
+        "participants": participants_info
+    }
+    
+    ai_service = AIService()
+    try:
+        result = ai_service.confirm_meeting(ai_payload, token)
+        
+        # Update Local DB with confirmed results (Summary/Transcript if needed)
+        if result.get("status") == "completed":
+            if result.get("summary"):
+                meeting.summary = result.get("summary")
+            db.commit()
+            
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{meeting_id}/recording")
 def upload_meeting_recording(meeting_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):

@@ -142,11 +142,11 @@ def create_task(
         "status": status,
         "tags": [],  # Default empty list
         "due_date": due_date,
-        "assigned_user_id": assigned_user_id,
+        "assignee_id": assigned_user_id,
     }
     # Chỉ gửi author_id nếu có (dù backend thường ignore và dùng token)
     if author_user_id:
-        payload["author_user_id"] = author_user_id
+        payload["author_id"] = author_user_id
     
     result = _api_post("/v1/tasks", payload)
     
@@ -174,14 +174,9 @@ def update_task_status(task_id: str, status: str) -> Dict[str, Any]:
         Task sau khi update
     """
     valid_statuses = ["To Do", "In Progress", "Done"]
-    if status not in valid_statuses:
-        return {
-            "success": False,
-            "error": f"Invalid status '{status}'",
-            "valid_statuses": valid_statuses
-        }
-    
-    result = _api_patch(f"/v1/tasks/{task_id}/status", {"status": status})
+    # Backend expects 'new_status' as query param for this specific endpoint
+    # We pass empty body {} as the second argument to _api_patch
+    result = _api_patch(f"/v1/tasks/{task_id}/status?new_status={status}", {})
     
     if result["success"]:
         task = result["data"]

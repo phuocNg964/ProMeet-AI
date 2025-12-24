@@ -134,3 +134,4 @@ src/rag/data/
 *.log
 node_modules/
 **/node_modules/
+server/static/recordings/

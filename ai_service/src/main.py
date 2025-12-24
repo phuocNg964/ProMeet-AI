@@ -1,3 +1,8 @@
+import warnings
+
+# Suppress warnings from langchain_google_genai using deprecated google.generativeai
+warnings.filterwarnings("ignore", message=".*google.generativeai.*", category=FutureWarning)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import settings

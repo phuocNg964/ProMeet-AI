@@ -26,10 +26,24 @@ class MeetingTask(BaseModel):
     assignee: Optional[str]
     due_date: Optional[str]
     priority: str
+    tags: Optional[str]
+    description: Optional[str]
+    status: Optional[str]
 
 class MeetingAnalyzeResponse(BaseModel):
     meeting_id: str
     status: str
-    minutes_of_meeting: Optional[str] = None
+    summary: Optional[str] = None
     action_items: List[MeetingTask] = []
     thread_id: str
+    transcript: Optional[str] = None # Added for returning full transcript
+
+class MeetingConfirmRequest(BaseModel):
+    meeting_id: str
+    updated_summary: Optional[str] = None
+    updated_action_items: Optional[List[MeetingTask]] = None
+    
+    # Metadata required for create_tasks
+    project_id: Optional[str] = None
+    author_id: Optional[str] = None
+    participants: List[MeetingParticipant] = []

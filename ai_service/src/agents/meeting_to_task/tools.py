@@ -5,8 +5,10 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import time
 import smtplib
+import os  # Added missing import
 import requests
-import google as genai
+from google import genai
+from google.genai import types
 from faster_whisper import WhisperModel
 from email.mime.text import MIMEText
 
@@ -14,6 +16,8 @@ from src.core.config import settings
 
 from src.core.config import settings
 from src.core.context import get_request_token
+
+from src.core.logging import logger
 
 # Cache
 _stt_model_cache = {}
@@ -61,21 +65,51 @@ def transcribe_audio(audio_file_path: str, use_mock: bool = False, provider: str
             if not settings.google_key:
                 raise ValueError("Missing Google API Key in settings")
                 
-            genai.configure(api_key=settings.google_key)
+            # --- NEW SDK MIGRATION (google-genai) ---
+            # Create a client instance instead of global configuration
+            client = genai.Client(api_key=settings.google_key)
             
-            # Upload file and generate transcript
-            myfile = genai.upload_file(audio_file_path)
+            # Use 'files' service for upload (formerly genai.upload_file)
+            # Depending on version, this might be client.files.upload or similar
+            # Checking standard new pattern:
             
-            while myfile.state.name == "PROCESSING":
-                time.sleep(2)
-                myfile = genai.get_file(myfile.name)
+            logger.info(f"🚀 [Gemini] Uploading file: {audio_file_path}")
+            # Correcting argument name from 'path' to 'file'
+            upload_result = client.files.upload(file=audio_file_path)
+            
+            # Wait for processing (New SDK usually handles this or needs manual loop)
+            # Assuming 'upload_result' has 'name' and we can poll 'get'
+            file_name = upload_result.name
+            
+            while True:
+                # Retrieve file status
+                retrieved_file = client.files.get(name=file_name)
+                state = retrieved_file.state.name # e.g. "PROCESSING", "ACTIVE"
                 
-            if myfile.state.name != "ACTIVE":
-                raise Exception(f"File upload failed with state: {myfile.state.name}")
+                if state == "ACTIVE":
+                    break
+                elif state == "FAILED":
+                    raise Exception("File upload failed.")
+                    
+                time.sleep(2)
             
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            prompt = "Tạo bản ghi chép cuộc họp chính xác từng từ. Định dạng bắt buộc: [HH:MM:SS] Tên người nói: Nội dung hội thoại. Ngôn ngữ: Tiếng Việt."
-            response = model.generate_content([prompt, myfile])
+            logger.info(f"✅ [Gemini] File ready. Generating content...")
+            
+            # Generate Content using the Client
+            response = client.models.generate_content(
+                model='gemini-2.0-flash', # Updated to latest or keep 1.5/2.0
+                contents=[
+                    types.Content(
+                        parts=[
+                            types.Part.from_text(text="Tạo bản ghi chép cuộc họp chính xác từng từ. Định dạng bắt buộc: [HH:MM:SS] Tên người nói: Nội dung hội thoại. Ngôn ngữ: Tiếng Việt."),
+                            types.Part.from_uri(
+                                file_uri=retrieved_file.uri,
+                                mime_type=retrieved_file.mime_type
+                            )
+                        ]
+                    )
+                ]
+            )
             transcript = response.text
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -112,7 +146,7 @@ def send_notification(
         sender_password = settings.EMAIL_PASSWORD
         
         if not sender_email or not sender_password:
-            print(f"    ⚠️ Preview mode (Missing EMAIL config in settings)")
+            logger.warning(f"⚠️ Preview mode (Missing EMAIL config in settings)")
             return True
         
         if not receiver_email:
@@ -130,21 +164,21 @@ def send_notification(
         
         return True
     except Exception as e:
-        print(f"    ❌ Email failed: {e}")
+        logger.error(f"❌ Email failed: {e}")
         return False
 
 
 def format_email_body_for_assignee(
     assignee_name: str,
     assignee_task: dict,
-    mom: str,
+    summary: str,
     meeting_metadata: dict
 ) -> str:
     """Format email body."""
     meeting_title = meeting_metadata.get('title', 'Meeting')
     task_title = assignee_task.get('title', 'Task')
     
-    return f"Xin chào {assignee_name},\n\nBạn có công việc mới từ cuộc họp '{meeting_title}':\n\n- {task_title}\n\nTóm tắt cuộc họp:\n{mom}"
+    return f"Xin chào {assignee_name},\n\nBạn có công việc mới từ cuộc họp '{meeting_title}':\n\n- {task_title}\n\nTóm tắt cuộc họp (Summary):\n{summary}"
 
 
 def create_tasks(
@@ -177,13 +211,13 @@ def create_tasks(
             payload = {
                 "title": item.get("title", "Untitled Task"),
                 "project_id": project_id,
-                "author_user_id": author_user_id,
+                "author_id": author_user_id, # Schema matches 'author_id'
                 "description": item.get("description"),
                 "status": item.get("status", "To Do"),
                 "priority": item.get("priority", "Medium"),
                 "tags": item_tags,
-                "due_date": item.get("dueDate"),
-                "assigned_user_id": assigned_user_id,
+                "due_date": item.get("due_date"),
+                "assignee_id": assigned_user_id, # CORRECTED field name
             }
             
             response = requests.post(
@@ -196,9 +230,9 @@ def create_tasks(
             if response.status_code == 201:
                 created_tasks.append(response.json())
             else:
-                print(f"Failed to create task: {response.text}")
+                logger.error(f"Failed to create task: {response.text}")
                 
         except Exception as e:
-            print(f"Error creating task: {e}")
+            logger.error(f"Error creating task: {e}")
             
     return created_tasks

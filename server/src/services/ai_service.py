@@ -1,13 +1,14 @@
 """
 server/src/services/ai_service.py
-Dịch vụ tích hợp Trí tuệ nhân tạo (AI) bằng Google Gemini SDK.
-Bao gồm: Phân tích biên bản cuộc họp để tạo Task tự động và xử lý Chatbot.
+Dịch vụ tích hợp Trí tuệ nhân tạo (AI) thông qua External AI Service.
+Bao gồm: Gửi yêu cầu phân tích cuộc họp tới AI Service và nhận kết quả.
 """
 
 import os
 import json
 from uuid import uuid4
-from typing import List, Dict, Any
+import requests
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
@@ -19,105 +20,103 @@ from src.repositories.task_repository import TaskRepository
 from google import genai
 from google.genai import types
 
+from src.core.logger import logger
+
 class AIService:
-    def __init__(self, db: Session):
+    def __init__(self):
         """
-        Khởi tạo AI Service.
-        Kết nối với Google Cloud / Gemini API qua GOOGLE_API_KEY.
+        Khởi tạo AI Service Client.
+        AI Service chạy tại localhost:8001 (mặc định) hoặc cấu hình qua env.
         """
-        self.meeting_repo = MeetingRepository(db)
-        self.task_repo = TaskRepository(db)
+        self.ai_service_url = os.getenv("AI_SERVICE_URL", "http://localhost:8001/api/v1")
+
+    def process_meeting(self, meeting_id: str, audio_file_path: str, meeting_metadata: dict, token: Optional[str] = None, background: bool = False, skip_review: bool = True) -> Dict[str, Any]:
+        """
+        Gửi yêu cầu phân tích cuộc họp tới AI Service.
+        """
+        # Build query params
+        url = f"{self.ai_service_url}/meeting/analyze?background={str(background).lower()}&skip_review={str(skip_review).lower()}"
         
-        # Kiểm tra sự tồn tại của API Key trong biến môi trường
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            print("⚠️ Cảnh báo: GOOGLE_API_KEY không tồn tại trong tệp .env.")
-            self.client = None
-        else:
-            self.client = genai.Client(api_key=api_key)
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
             
-        # Sử dụng model gemini-1.5-flash làm mặc định (hiệu năng cao, chi phí thấp)
-        self.ai_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-
-    def process_transcript_and_create_tasks(self, meeting_id: str, transcript: str, current_user_id: str) -> List[task_schemas.TaskOut]:
-        """
-        Phân tích nội dung văn bản cuộc họp (transcript) và tự động tạo danh sách công việc.
+        # Payload khớp với MeetingAnalyzeRequest trong AI Service
+        payload = {
+            "meeting_id": meeting_id,
+            "title": meeting_metadata.get("title", "Untitled Meeting"),
+            "description": meeting_metadata.get("description"),
+            "author_id": meeting_metadata.get("author_id"), 
+            "project_id": meeting_metadata.get("projectId"), 
+            "audio_file_path": audio_file_path,
+            "participants": meeting_metadata.get("participants", []),
+        }
         
-        Quy trình:
-        1. Gửi transcript tới Gemini AI kèm theo Prompt (câu lệnh) chuyên dụng.
-        2. Yêu cầu AI trả về kết quả dưới dạng JSON có cấu trúc.
-        3. Phân tích kết quả JSON và lưu các công việc vào cơ sở dữ liệu.
-        4. Cập nhật transcript vào thông tin cuộc họp.
-        """
-        meeting = self.meeting_repo.get_by_id(meeting_id)
-        if not meeting:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc họp.")
-
-        if not self.client:
-            raise HTTPException(status_code=503, detail="Dịch vụ AI hiện không khả dụng (Thiếu API Key).")
-
-        # Xây dựng Prompt hướng dẫn AI trích xuất thông tin
-        prompt = f"""
-        Bạn là trợ lý thư ký cuộc họp chuyên nghiệp. Hãy phân tích nội dung cuộc họp dưới đây:
-        "{transcript}"
-
-        Nhiệm vụ: Trích xuất các công việc (tasks) cụ thể cần thực hiện.
-        Yêu cầu Output: Trả về ĐÚNG định dạng JSON như sau (không thêm markdown ```json):
-        {{
-            "tasks": [
-                {{ "title": "Tên công việc ngắn gọn", "priority": "High/Medium/Low", "assignee_name": "Tên người được giao (hoặc Unassigned)" }}
-            ]
-        }}
-        """
-
         try:
-            # Gọi API Gemini với cấu hình ép kiểu đầu ra là JSON
-            response = self.client.models.generate_content(
-                model=self.ai_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
+            logger.info(f"🚀 [AIService] Sending request to {url} for Meeting {meeting_id}")
+            response = requests.post(url, json=payload, headers=headers, timeout=300) 
             
-            # Chuyển đổi văn bản phản hồi thành đối tượng Python Dictionary
-            ai_data = json.loads(response.text)
-            ai_tasks_raw = ai_data.get("tasks", [])
+            if response.status_code == 200:
+                logger.info(f"✅ [AIService] Received response from AI Service")
+                return response.json()
+            else:
+                logger.error(f"❌ [AIService] Error {response.status_code}: {response.text}")
+                raise HTTPException(status_code=response.status_code, detail=f"AI Service Error: {response.text}")
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ [AIService] Connection Error: {e}")
+            raise HTTPException(status_code=503, detail=f"Could not connect to AI Service: {e}")
+
+    def confirm_meeting(self, payload: dict, token: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Gửi yêu cầu xác nhận kết quả phân tích tới AI Service.
+        """
+        url = f"{self.ai_service_url}/meeting/confirm"
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
             
-        except Exception as e:
-            print(f"❌ Lỗi khi gọi AI: {e}")
-            return []
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                 raise HTTPException(status_code=response.status_code, detail=f"AI Service Error: {response.text}")
+        except requests.exceptions.RequestException as e:
+            raise HTTPException(status_code=503, detail=f"Could not connect to AI Service: {e}")
 
-        # Lưu các Task đã trích xuất vào DB
-        created_tasks = []
-        for task_raw in ai_tasks_raw:
-            new_task_data = {
-                "id": str(uuid4()),
-                "project_id": meeting.project_id,
-                "author_id": current_user_id,
-                "title": task_raw.get("title", "Công việc không tên"),
-                "priority": task_raw.get("priority", "Medium"),
-            }
-            db_task = self.task_repo.create(new_task_data)
-            created_tasks.append(task_schemas.TaskOut.model_validate(db_task))
-
-        # Cập nhật nội dung transcript vào bản ghi cuộc họp
-        self.meeting_repo.update_meeting_data(meeting_id, {"transcript": transcript}) 
+    def process_chat(self, message: str, thread_id: str = "general", token: Optional[str] = None) -> str:
+        """
+        Gửi tin nhắn tới Project Manager Agent (External Service).
+        """
+        url = f"{self.ai_service_url}/project/chat"
         
-        return created_tasks
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+            
+        payload = {
+            "query": message,
+            "thread_id": thread_id
+        }
+        
+        try:
+            # logger.info(f"🚀 [AIService] Sending chat to {url}")
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("response", "No response from agent")
+            else:
+                logger.error(f"❌ [AIService] Chat Error {response.status_code}: {response.text}")
+                return "Xin lỗi, tôi đang gặp sự cố kết nối với Agent."
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ [AIService] Chat Connection Error: {e}")
+            return "Xin lỗi, hệ thống AI đang bảo trì."
 
     def get_chat_response(self, prompt: str, user_id: str) -> str:
         """
-        Xử lý hội thoại trực tiếp với AI Chatbot.
+        Legacy/Fallback method.
         """
-        if not self.client:
-            return "Xin lỗi, hệ thống AI chưa được cấu hình API Key."
-
-        try:
-            response = self.client.models.generate_content(
-                model=self.ai_model,
-                contents=f"User: {prompt}\nAI Assistant:",
-            )
-            return response.text
-        except Exception as e:
-            return f"Đã xảy ra lỗi khi xử lý hội thoại: {str(e)}"
+        return self.process_chat(message=prompt)

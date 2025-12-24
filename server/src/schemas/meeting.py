@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 # Import TaskOut để sử dụng làm cấu trúc cho aiTasks
@@ -26,6 +26,21 @@ class MeetingCreate(MeetingBase):
 class MeetingTranscript(BaseModel):
     """Schema cho việc gửi bản ghi chép (transcript) lên server."""
     transcript: str
+
+class MeetingTaskConfig(BaseModel):
+    title: str
+    assignee: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: str = "Medium"
+    tags: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = "To Do"
+
+class MeetingConfirmRequest(BaseModel):
+    """Schema xác nhận kết quả phân tích AI."""
+    meeting_id: str
+    updated_summary: Optional[str] = None
+    updated_action_items: Optional[List[MeetingTaskConfig]] = None
 
 # --- Output Schemas ---
 

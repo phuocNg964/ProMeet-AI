@@ -11,10 +11,14 @@ app = FastAPI(title="JiraMeet API")
 
 # --- CORS ---
 origins = [
-    "http://localhost:3000",      # Frontend React
+    # Frontend (React)
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:5000",      # <--- THÊM DÒNG NÀY (Meeting App)
-    "http://127.0.0.1:5000",      # <--- THÊM CẢ DÒNG NÀY CHO CHẮC
+    "http://[::1]:3000",          # IPv6 localhost
+    
+    # Meeting Analysis Agent
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
 ]
 
 app.add_middleware(
