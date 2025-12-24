@@ -40,7 +40,7 @@ class MeetingToTaskAgent:
     def __init__(self):
         """
         Khởi tạo agent
-        
+    
         Args:
             provider_name: Tên provider LLM để sử dụng
         """
