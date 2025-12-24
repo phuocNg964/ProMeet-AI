@@ -33,7 +33,9 @@ def chat_project_manager(
         }
         
         # Invoke the graph
-        result = agent_system.graph.invoke(initial_state)
+        # Pass thread_id to enable memory checkpointing
+        config = {"configurable": {"thread_id": request.thread_id}}
+        result = agent_system.graph.invoke(initial_state, config=config)
         
         # Extract the last message content
         last_message = result['messages'][-1]

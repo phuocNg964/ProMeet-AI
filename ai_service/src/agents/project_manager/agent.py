@@ -11,8 +11,12 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 
 # Relative imports
 from ...models.models import call_llm
+
 from ...rag.retriever import retrieve, format_retrieved_documents
 from .api_tools import ALL_API_TOOLS
+import os
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
 
 
 
@@ -75,6 +79,19 @@ class AgenticRAG:
         self.tools = {t.name: t for t in self.tools_list}
         self.llm_tool_call = self.llm_tool_call.bind_tools(self.tools_list)
         
+        # Memory Checkpointer Setup
+        self.db_url = os.getenv("DATABASE_URL")
+        if not self.db_url:
+            logger.warning("DATABASE_URL not found. Memory persistence will effectively be disabled (or fail if graph requires it).")
+        
+        # Initialize the connection pool (basic setup)
+        # Note: In a production app, you might want to share this pool or manage it globally.
+        self.pool = ConnectionPool(conninfo=self.db_url, min_size=1, max_size=10, kwargs={"autocommit": True})
+        self.checkpointer = PostgresSaver(self.pool)
+
+        # Ensure tables exist (Blocking call on init)
+        self.checkpointer.setup()
+
         self.graph = self.build_graph()
     
     def build_graph(self) -> StateGraph:
@@ -124,7 +141,7 @@ class AgenticRAG:
         # DIRECT route
         builder.add_edge('direct_generator', END)
         
-        return builder.compile()
+        return builder.compile(checkpointer=self.checkpointer)
     
     
     # Router node
@@ -164,9 +181,21 @@ VÍ DỤ:
         
         response = self.llm_router.with_structured_output(RouterOutput).invoke(messages)
         
-        logger.info(f"Router decision: {response.decision}")
+        if not response:
+            logger.error("Router response is None or empty")
+            decision = "DIRECT"
+        elif isinstance(response, dict):
+            decision = response.get('decision', 'DIRECT')
+        else:
+            try:
+                decision = response.decision
+            except AttributeError:
+                logger.error(f"Router response object {type(response)} has no attribute 'decision'")
+                decision = "DIRECT"
+
+        logger.info(f"Router decision: {decision}")
         
-        return {'router_decision': response.decision}
+        return {'router_decision': decision}
     
     # Tool nodes
     def tool_generator(self, state: AgentState) -> None:
