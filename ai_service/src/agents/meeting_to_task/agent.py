@@ -29,6 +29,9 @@ from ...models.models import call_llm
 
 logger = logging.getLogger(__name__)
 
+# Global memory checkpointer to persist state across instances (requests)
+_memory_store = MemorySaver()
+
 class MeetingToTaskAgent:
     """
     Agent xử lý meeting recordings và tạo tasks tự động
@@ -47,7 +50,7 @@ class MeetingToTaskAgent:
             temperature=0.3,
             top_p=0.7,
         )
-        self.memory = MemorySaver()
+        self.memory = _memory_store # Use global instance
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:

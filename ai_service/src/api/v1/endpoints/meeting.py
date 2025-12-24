@@ -133,37 +133,35 @@ async def confirm_meeting(
     authorization: Optional[str] = Header(None)
 ):
     """
-    Confirm analysis results and create tasks.
+    Confirm analysis results and resume Agent workflow (create tasks).
     """
     try:
+        # Pass token to context for tools to use
         token = authorization.replace("Bearer ", "") if authorization and authorization.startswith("Bearer ") else authorization
         if token:
             set_request_token(token)
 
-        # Reconstruct user_mapping
-        user_mapping = {}
-        for p in request.participants:
-            username = p.name
-            user_id = p.id
-            if username and user_id:
-                user_mapping[username.lower().strip()] = user_id
-                
-        # Prepare action items dict list
-        action_items_dicts = [item.model_dump() for item in request.updated_action_items] if request.updated_action_items else []
+        # Reconstruct updated items for the agent
+        # The agent expects a list of dicts for action_items
+        updated_action_items = [item.model_dump() for item in request.updated_action_items] if request.updated_action_items else []
         
-        # Call create_tasks tool directly
-        tasks = create_tasks(
-            action_items=action_items_dicts,
-            project_id=request.project_id,
-            author_user_id=request.author_id,
-            user_mapping=user_mapping
+        # Resume the agent
+        agent = MeetingToTaskAgent()
+        thread_config = {'configurable': {'thread_id': request.meeting_id}}
+        
+        # This will run the remaining nodes (create_tasks -> END)
+        final_state_updates = agent.continue_after_review(
+            thread=thread_config,
+            updated_summary=request.updated_summary,
+            updated_action_items=updated_action_items
         )
         
+        # Return final result
         return MeetingAnalyzeResponse(
             meeting_id=request.meeting_id,
             status="completed",
             thread_id=request.meeting_id,
-            summary=request.updated_summary,
+            summary=request.updated_summary, # Return the confirmed summary
             action_items=request.updated_action_items or [],
             transcript="" 
         )
