@@ -379,3 +379,10 @@ class MeetingToTaskAgent:
         
         final_state = self.graph.get_state(thread)
         return final_state.values
+    
+    def get_graph(self):
+        """Hiển thị graph dưới dạng hình ảnh"""
+        from IPython.display import Image, display
+        
+        img = self.graph.get_graph().draw_mermaid_png()
+        return display(Image(img))

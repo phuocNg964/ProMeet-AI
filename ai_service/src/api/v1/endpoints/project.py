@@ -2,14 +2,14 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from src.schemas.chat import ChatRequest, ChatResponse
 # Import the agent class
-from src.agents.project_manager.agent import AgenticRAG
+from src.agents.project_manager.agent import AgenticProjectManager
 from src.core.context import set_request_token
 from langchain_core.messages import HumanMessage
 
 router = APIRouter()
 
 # Global instance (In production, use dependency injection or cache)
-agent_system = AgenticRAG()
+agent_system = AgenticProjectManager()
 # Note: Re-building graph might be needed if tools depend on init, but they are dynamic.
 
 @router.post("/chat", response_model=ChatResponse)

@@ -12,7 +12,6 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 # Relative imports
 from ...models.models import call_llm
 
-from ...rag.retriever import retrieve, format_retrieved_documents
 from .api_tools import ALL_API_TOOLS
 import os
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -28,7 +27,8 @@ param_dict = {
         'model_provider': 'gemini',
         'model_name': 'gemini-2.5-flash-lite',
         'temperature': 0.3,
-        'top_p': 0.7,
+        'top_p': 0.5,
+        'max_tokens': 100,
     },
     'direct_kwargs': {
         'model_provider': 'gemini',
@@ -37,11 +37,11 @@ param_dict = {
         'top_p': 0.9,
         'max_tokens': 200,
     },
-    'large_deterministic_kwargs': { # rag, tool_call
+    'large_deterministic_kwargs': { # tool_call
         'model_provider': 'gemini',
         'model_name': 'gemini-2.5-flash-lite',
         'temperature': 0.3,
-        'top_p': 0.7,
+        'top_p': 0.5,
     },
 }
 
@@ -49,20 +49,19 @@ param_dict = {
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
     query: str
-    router_decision: str # "RAG" or "DIRECT" or "TOOL_CALL"
-    retrieved_documents: list[dict]
+    router_decision: str #"DIRECT" or "TOOL_CALL"
 
 class RouterOutput(BaseModel):
     """Schema for Router"""
-    decision: Literal["RAG", "TOOL_CALL", "DIRECT"] = Field(
-        description="Quyết định phân luồng: 'RAG' cho truy vấn cần tra cứu tài liệu nội bộ, 'DIRECT' cho hội thoại/trả lời trực tiếp không cần tra cứu tài liệu."
+    decision: Literal["TOOL_CALL", "DIRECT"] = Field(
+        description="Quyết định phân luồng: 'TOOL_CALL' cho các yêu cầu cần gọi API/công cụ, 'DIRECT' cho hội thoại/trả lời trực tiếp."
     )
 
 # --- AGENT CLASS ---
-class AgenticRAG:
+class AgenticProjectManager:
     def __init__(self, tools: Optional[List] = None):
         """
-        Initialize the Agentic RAG system.
+        Initialize the Agentic system.
         
         Args:
             tools: Optional list of tools to use. If None, uses ALL_API_TOOLS.
@@ -70,7 +69,6 @@ class AgenticRAG:
         # self.current_user_id = current_user_id # Removed per refactor
         
         self.llm_router = call_llm(**param_dict['router_kwargs'])
-        self.llm_rag = call_llm(**param_dict['large_deterministic_kwargs'])
         self.llm_direct = call_llm(**param_dict['direct_kwargs'])
         self.llm_tool_call = call_llm(**param_dict['large_deterministic_kwargs'])
         
@@ -99,10 +97,6 @@ class AgenticRAG:
         
         # Intent classifier
         builder.add_node('router', self.router)
-        
-        # RAG nodes
-        builder.add_node('retriever', self.retriever)
-        builder.add_node('rag_generator', self.rag_generator)
 
         # Tool Call nodes
         builder.add_node('tool_call', self.take_action)
@@ -117,15 +111,12 @@ class AgenticRAG:
             'router',
             self._intent_classify,
             {
-                'RAG': 'retriever',
                 'TOOL_CALL': 'tool_generator',
                 'DIRECT': 'direct_generator'
             }
         )
         
-        # RAG route: Retrieve -> Generate -> END
-        builder.add_edge('retriever', 'rag_generator')
-        builder.add_edge('rag_generator', END)
+        builder.add_edge('direct_generator', END)
         
         # Tool Call route
         builder.add_conditional_edges(
@@ -138,15 +129,12 @@ class AgenticRAG:
         )
         builder.add_edge('tool_call', 'tool_generator')
         
-        # DIRECT route
-        builder.add_edge('direct_generator', END)
-        
         return builder.compile(checkpointer=self.checkpointer)
     
     
     # Router node
     def router(self, state: AgentState):
-        """Router node to decide between RAG and Direct generation"""
+        """Router node to decide between Tool Call and Direct generation"""
         
         query = state['query']
         prompt = """Phân loại câu hỏi vào 1 trong 3 nhánh:
@@ -156,12 +144,6 @@ DIRECT - Trả lời trực tiếp:
 • Viết email, dịch thuật, soạn văn bản
 • Kiến thức chung (Agile, Scrum, REST API...)
 
-RAG - Tra cứu tài liệu nội bộ:
-• Quy trình, quy định, SOP công ty
-• Vai trò, trách nhiệm, RACI nội bộ
-• Change request, escalation, xử lý sự cố
-• Câu hỏi về phí, thanh toán, chi phí dự án
-
 TOOL_CALL - Thao tác dữ liệu cá nhân:
 • Xem/tạo/cập nhật task CỦA TÔI
 • Tìm kiếm task/project của tôi
@@ -169,11 +151,8 @@ TOOL_CALL - Thao tác dữ liệu cá nhân:
 
 VÍ DỤ:
 • "Viết email xin hoãn deadline" → DIRECT
-• "Quy trình xin hoãn deadline" → RAG  
 • "Tasks của tôi" → TOOL_CALL
-• "Tôi là ai?" → TOOL_CALL
-• "Khách đổi ý thì tính thêm tiền không?" → RAG"""
-
+"""
         messages = [
             SystemMessage(content=prompt),
             HumanMessage(content=query)
@@ -201,7 +180,7 @@ VÍ DỤ:
     def tool_generator(self, state: AgentState) -> None:
         """Generate tool calls if necessary"""
         
-        messages = state['messages']
+        messages = state['messages'][-5:]
         query = state['query']
         
         tool_prompt = """Bạn là PM Assistant - Trợ lý quản lý dự án.
@@ -312,55 +291,12 @@ QUY TẮC TRẢ LỜI (RẤT QUAN TRỌNG):
                 ))
                     
         return {'messages': tool_messages}
-        
-    # RAG Nodes
-    def retriever(self, state: AgentState) -> None:
-        """Retrieve documents"""
-        
-        query = state['query']
-        # Disable reranker to avoid "unknown capability: rerank" error if module is missing
-        retrieved_documents = retrieve(query=query, collection_name='ProjectDocuments', use_reranker=False, top_k=10)
-        
-        doc_count = len(retrieved_documents.objects) if retrieved_documents and retrieved_documents.objects else 0
-        logger.info(f"Retrieved {doc_count} documents.")
-        
-        formatted_retrieved_documents = format_retrieved_documents(retrieved_documents)
-        
-        return {'retrieved_documents': formatted_retrieved_documents}
-        
-    def rag_generator(self, state: AgentState) -> None:
-        """Generator aggregates retrieved document"""
-        
-        query = state['query']
-        retrieved_documents = state['retrieved_documents']
-        messages = state['messages']
-        rag_generator_prompt = """Trả lời dựa trên tài liệu được cung cấp.
-• Nếu không tìm thấy: nói rõ "Không tìm thấy trong tài liệu"
-• Trả lời ngắn gọn, súc tích
-• Không suy diễn ngoài tài liệu"""
 
-        user_prompt = f"""Tài liệu:
-{retrieved_documents}
-
-Câu hỏi: {query}"""
-
-        messages = [
-            SystemMessage(content=rag_generator_prompt),
-            *messages,
-            HumanMessage(content=user_prompt)
-
-        ]
-        response = self.llm_rag.invoke(messages)
-
-        logger.info(f"RAG generator response: {response.content}")
-        
-        return {'messages': [response]}
-    
     # Direct answer node
     def direct_generator(self, state: AgentState) -> None:
-        """Generate direct answer non-related RAG queries"""
+        """Generate direct answer non-related queries"""
         
-        messages = state['messages']
+        messages = state['messages'][-5:]
         query = state['query']
         system_prompt = """Bạn là trợ lý AI hữu ích và thân thiện.
 NHIỆM VỤ: Trả lời các câu hỏi giao tiếp thông thường, viết email, hoặc giải thích các khái niệm chung.
@@ -393,3 +329,10 @@ NGUYÊN TẮC:
         last_message = messages[-1]
         tool_calls = getattr(last_message, 'tool_calls', None)
         return bool(tool_calls)
+
+    def get_graph(self):
+        """Hiển thị graph dưới dạng hình ảnh"""
+        from IPython.display import Image, display
+        
+        img = self.graph.get_graph().draw_mermaid_png()
+        return display(Image(img))
