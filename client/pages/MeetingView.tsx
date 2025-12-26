@@ -15,6 +15,7 @@ import * as api from '../api/mockApi';
 interface MeetingViewProps {
     meetings: Meeting[];
     currentUser: User;
+    users: User[];
     onOpenDetail: (meeting: Meeting) => void;
     onDelete?: (meetingId: string) => void;
 }
@@ -22,12 +23,12 @@ interface MeetingViewProps {
 /**
  * THÀNH PHẦN CHÍNH: Hiển thị danh sách các Card cuộc họp.
  */
-const MeetingView: React.FC<MeetingViewProps> = ({ meetings, currentUser, onOpenDetail, onDelete }) => {
+const MeetingView: React.FC<MeetingViewProps> = ({ meetings, currentUser, users, onOpenDetail, onDelete }) => {
     const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
 
     // Nếu người dùng chọn xem chi tiết một cuộc họp
     if (selectedMeeting) {
-        return <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} currentUser={currentUser} />;
+        return <MeetingDetail meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} currentUser={currentUser} users={users} />;
     }
 
     /** Hàm định dạng thời gian (VD: 09:30 AM) */
@@ -133,7 +134,7 @@ const AiTaskCard: React.FC<{ task: Task; onAdd: (t: Task) => void }> = ({ task, 
 /**
  * CHI TIẾT CUỘC HỌP (Sử dụng Tab để chuyển đổi các nội dung)
  */
-const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUser: User }> = ({ meeting, onBack, currentUser }) => {
+const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUser: User; users: User[] }> = ({ meeting, onBack, currentUser, users }) => {
     const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'recording' | 'tasks'>('transcript');
     const [loadingAI, setLoadingAI] = useState(false);
     const [isAnalyzed, setIsAnalyzed] = useState(!!meeting.transcript); // Kiểm tra đã được phân tích chưa
@@ -178,18 +179,20 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
 
     /** Xác nhận Review */
     const handleConfirmReview = async () => {
-        setLoadingAI(true); // Re-use loading state
-        try {
-            await api.confirmAiAnalysis(meeting.id, reviewData.summary, reviewData.tasks);
-            alert("Analysis Confirmed! Tasks have been created.");
-            setShowReview(false);
-            setIsAnalyzed(true);
-            // Optionally refresh meeting data here to get the new snapshot
-        } catch (error: any) {
-            alert("Error confirming analysis: " + (error.response?.data?.detail || "Unknown error"));
-        } finally {
-            setLoadingAI(false);
-        }
+        // Optimistic / Background update
+        setShowReview(false);
+        setIsAnalyzed(true);
+        alert("Confirmation sent! The agent is creating tasks in the background.");
+
+        // Background call
+        api.confirmAiAnalysis(meeting.id, reviewData.summary, reviewData.tasks)
+            .then(() => {
+                console.log("Background analysis confirmation success.");
+            })
+            .catch((error: any) => {
+                console.error("Background analysis confirmation failed:", error);
+                // alert("Background task creation failed: " + (error.response?.data?.detail || "Unknown error"));
+            });
     };
 
     return (
@@ -260,7 +263,7 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                     <div className="flex gap-3 pt-1">
                                                         <div className="flex flex-col">
                                                             <label className="text-[10px] uppercase font-bold text-slate-400">Assignee</label>
-                                                            <input
+                                                            <select
                                                                 className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 focus:border-indigo-500 outline-none w-32"
                                                                 value={task.assignee || ""}
                                                                 onChange={(e) => {
@@ -268,8 +271,17 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                                     newTasks[idx].assignee = e.target.value;
                                                                     setReviewData(prev => ({ ...prev, tasks: newTasks }));
                                                                 }}
-                                                                placeholder="Unassigned"
-                                                            />
+                                                            >
+                                                                <option value="">Unassigned</option>
+                                                                {meeting.attendees.map(attendeeId => {
+                                                                    const user = users.find(u => u.id === attendeeId);
+                                                                    return (
+                                                                        <option key={attendeeId} value={attendeeId}>
+                                                                            {user ? user.name : `User ${attendeeId}`}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
                                                         </div>
                                                         <div className="flex flex-col">
                                                             <label className="text-[10px] uppercase font-bold text-slate-400">Priority</label>

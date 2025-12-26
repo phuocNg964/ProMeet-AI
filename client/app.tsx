@@ -373,7 +373,7 @@ export default function App() {
               {viewMode === 'LIST' && <ListView tasks={currentProjectTasks} users={users} projects={projects} onEdit={(t) => { setTaskToEdit(t); setEditTaskModalOpen(true); }} onDelete={handleDeleteTask} />}
               {viewMode === 'TABLE' && <TableView tasks={currentProjectTasks} users={users} onDelete={handleDeleteTask} />}
               {viewMode === 'TIMELINE' && <TimelineView tasks={currentProjectTasks} meetings={currentProjectMeetings} />}
-              {viewMode === 'MEETING' && <MeetingView meetings={currentProjectMeetings} currentUser={currentUser} onOpenDetail={() => { }} onDelete={handleDeleteMeeting} />}
+              {viewMode === 'MEETING' && <MeetingView meetings={currentProjectMeetings} currentUser={currentUser} users={users} onOpenDetail={() => { }} onDelete={handleDeleteMeeting} />}
             </div>
           </>
         )}

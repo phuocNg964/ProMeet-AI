@@ -63,7 +63,7 @@ class MeetingToTaskAgent:
         builder.add_node('reflection', self._reflection)
         builder.add_node('refinement', self._refinement)
         builder.add_node('create_tasks', self._create_tasks)
-        # builder.add_node('notification', self._notification)
+        builder.add_node('notification', self._notification)
         
         # Thiết lập entry point
         builder.set_entry_point('stt')
@@ -86,9 +86,9 @@ class MeetingToTaskAgent:
         builder.add_edge('refinement', 'reflection')
         
         # Edge: create_tasks -> notification -> END
-        # builder.add_edge('create_tasks', 'notification')
-        # builder.add_edge('notification', END)
-        builder.add_edge('create_tasks', END)
+        builder.add_edge('create_tasks', 'notification')
+        builder.add_edge('notification', END)
+        # builder.add_edge('create_tasks', END)
         # Compile graph với memory và interrupt_before
         return builder.compile(
             checkpointer=self.memory,
@@ -108,9 +108,7 @@ class MeetingToTaskAgent:
         
         # In production: Audio should be downloaded from S3 or passed as bytes.
         # Here we assume audio_file_path is accessible (e.g. shared volume or local dev)
-        
-        logger.info(f"  🎤 Transcribing audio: {state['audio_file_path']}")
-        
+                
         transcript = transcribe_audio(
             state['audio_file_path'], 
             provider='gemini', 
@@ -148,8 +146,6 @@ class MeetingToTaskAgent:
         
         logger.info(f"  ✅ Summary: {len(response.summary)} ký tự")
         logger.info(f"  ✅ Action Items: {len(action_items_list)} items")
-        for item in action_items_list:
-            logger.info(f"     - {item.get('assignee', 'N/A')}: {item.get('title', '')[:40]}...")
         
         return {
             'summary': response.summary,
@@ -174,7 +170,7 @@ class MeetingToTaskAgent:
         
         response = self.model.with_structured_output(ReflectionOutput).invoke(messages)
         
-        logger.info(f"  📝 Critique: {response.critique[:100]}...")
+        logger.info(f"  📝 Critique: {response.critique}")
         logger.info(f"  🎯 Decision: {response.decision}")
         
         return {'critique': response.critique, 'reflect_decision': response.decision}
@@ -213,7 +209,6 @@ class MeetingToTaskAgent:
     def _create_tasks(self, state: AgentState):
         """Node 5: Tạo tasks trong hệ thống backend"""
         logger.info("\n[NODE 5] Tạo tasks...")
-        logger.info('='*100)
         summary: str
         action_items = state.get('action_items', [])
         meeting_metadata = state.get('meeting_metadata', {})
@@ -246,7 +241,6 @@ class MeetingToTaskAgent:
     def _notification(self, state: AgentState):
         """Node 6: Gửi thông báo tới từng assignee"""
         logger.info("\n[NODE 6] Gửi notification...")
-        logger.info('='*100)
         
         summary = state.get('summary')
         action_items = state.get('action_items', [])
@@ -265,7 +259,7 @@ class MeetingToTaskAgent:
             
             # Skip nếu là Unassigned
             if assignee == 'unassigned' or not assignee:
-                logger.info(f"  ⏭️ Skip task không có assignee: {task.get('title', '')[:30]}...")
+                logger.info(f"  ⏭️ Skip task không có assignee: {task.get('title', '')}")
                 continue
             
             email = email_map.get(assignee)
@@ -372,7 +366,6 @@ class MeetingToTaskAgent:
             self.graph.update_state(thread, updates)
         
         logger.info("\n▶️ Continuing after human review...")
-        logger.info("="*100)
         
         for event in self.graph.stream(None, thread):
             pass

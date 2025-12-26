@@ -315,7 +315,7 @@ export async function chatWithProjectManager(message: string, projectId?: string
     // API Route: server/src/api/v1/ai_router.py -> /chat
     const res = await api.post('/ai/chat', {
         message: message,
-        thread_id: projectId ? `project_${projectId}` : `user_${userId || 'guest'}`
+        thread_id: `user_${userId || 'guest'}`
     });
     return res.data.response;
 }
