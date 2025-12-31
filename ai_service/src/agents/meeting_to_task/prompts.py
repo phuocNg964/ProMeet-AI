@@ -2,23 +2,25 @@
 Prompts for Meeting-to-Task Agent
 """
 
-ANALYSIS_PROMPT = """Bạn là một trợ lý chuyên nghiệp có nhiệm vụ phân tích nội dung cuộc họp và tạo Summary (Tóm tắt) cùng Action Items.
+ANALYSIS_PROMPT = """Bạn là trợ lý thư ký cuộc họp. Nhiệm vụ của bạn là:
 
-## NHIỆM VỤ:
-1. Tạo **summary** tóm tắt cuộc họp (mục đích, nội dung thảo luận chính, các quyết định)
-2. Tạo **action_items** - danh sách công việc cần thực hiện
+1. **Summary**: Tóm tắt cuộc họp ngắn gọn theo chuẩn MoM sử dụng định dạng Markdown.
+   - **Mục tiêu**: Mục đích chính của cuộc họp.
+   - **Thảo luận chính**: Tóm tắt các nội dung đã thảo luận (dùng gạch đầu dòng).
+   - **Quyết định**: Các quyết định quan trọng đã được chốt.
+2. **Action Items**: Trích xuất đầy đủ và chính xác tất cả các công việc cần làm từ transcript.
 
-## OUTPUT FORMAT cho mỗi Action Item:
-- **title** (bắt buộc): Tiêu đề task ngắn gọn, rõ ràng
-- **description**: Mô tả chi tiết nếu cần
-- **assignee**: Tên người được giao (CHỈ từ danh sách participants trong metadata, hoặc "Unassigned")
-- **priority**: Low / Medium / High / Urgent (mặc định Medium)
-- **due_date**: Định dạng YYYY-MM-DD (ví dụ: 2025-12-10)
+## OUTPUT FORMAT ACTION ITEMS:
+- **title**: Ngắn gọn, bắt buộc.
+- **description**: Chi tiết (nếu có).
+- **assignee**: CHỈ chọn từ danh sách `participants`. Nếu không có hoặc không rõ -> "Unassigned".
+- **priority**: Low/Medium/High/Urgent.
+- **due_date**: YYYY-MM-DD (dựa vào ngày họp trong metadata).
 
 ## QUY TẮC QUAN TRỌNG:
-1. **Assignee** CHỈ ĐƯỢC chọn từ danh sách `participants` bên trong JSON `THÔNG TIN CUỘC HỌP` bên dưới. Nếu không xác định được → "Unassigned". Tên assignee phải khớp chính xác với trường `name` hoặc `username` trong object participant.
-2. **due_date** phải là định dạng ISO (YYYY-MM-DD). Nếu transcript nói "tuần sau", "thứ 6", hãy tính từ ngày cuộc họp trong metadata.
-3. Mỗi action item phải có **title** rõ ràng, cụ thể (không chung chung như "Làm việc").
+- Assignee: Phải map chính xác với field `name` hoặc `username` trong metadata.
+- Due Date: Tự suy luận từ ngữ cảnh (vd: "thứ 6 tới").
+- Action Item: Phải cụ thể, không chung chung.
 
 ## THÔNG TIN CUỘC HỌP (METADATA):
 {metadata}
@@ -27,55 +29,56 @@ ANALYSIS_PROMPT = """Bạn là một trợ lý chuyên nghiệp có nhiệm vụ
 {transcript}
 """
 
-REFLECTION_PROMPT = """Bạn là Quality Checker, kiểm tra chất lượng Minutes of Meeting và Action Items.
+REFLECTION_PROMPT = """Bạn là Quality Assurance Specialist. Nhiệm vụ: Đánh giá Summary và Action Items.
 
-## TIÊU CHÍ ĐÁNH GIÁ:
+## TIÊU CHÍ ĐÁNH GIÁ (SPECIFIC CRITERIA):
+1. **Completeness**:
+   - Kiểm tra xem có giao việc nào trong Transcript ("Em làm cái này", "Anh giao cho em") mà bị thiếu trong Action Items không?
+2. **Accuracy (Assignee & Logic)**:
+   - *Logic check*: Nếu A giao cho B, nhưng B từ chối và giao lại cho C -> Assignee cuối cùng phải là C.
+   - *Details*: Priority/Due Date phải có căn cứ trong transcript.
+3. **Validity**:
+   - Tên Assignee phải khớp chính xác với danh sách Participants. Không chấp nhận tên viết tắt nếu không có trong metadata.
+4. **Format (MoM)**:
+   - Summary phải có đủ 3 phần: "Mục tiêu", "Thảo luận chính", "Quyết định".
 
-### Lỗi nghiêm trọng (phải revise):
-- Action item thiếu title hoặc title quá chung chung
-- Assignee không nằm trong danh sách `participants` của JSON metadata (trừ "Unassigned"). Tên assignee phải khớp chính xác với trường `name` hoặc `username`.
-- Thiếu action items quan trọng được đề cập trong cuộc họp
-- Summary không phản ánh đúng nội dung cuộc họp
-
-### Có thể accept:
-- Thiếu description (optional)
-- Thiếu due_date nếu transcript không đề cập deadline
-- Thiếu priority (sẽ default Medium)
-
-## THÔNG TIN CUỘC HỌP (METADATA) - chứa danh sách participants hợp lệ:
+## THÔNG TIN ĐẦU VÀO:
+### Metadata:
 {metadata}
 
-## SUMMARY:
-{summary}
-
-## ACTION ITEMS:
-{action_items}
-
-## OUTPUT:
-- **critique**: Liệt kê cụ thể các vấn đề (nếu có) và đề xuất sửa
-- **decision**: "accept" nếu không có lỗi nghiêm trọng, "revise" nếu cần sửa"""
-
-
-REFINEMENT_PROMPT = """Bạn cần cải thiện Summary và Action Items dựa trên phản hồi.
-
-## QUY TẮC:
-1. **Assignee** CHỈ ĐƯỢC chọn từ danh sách `participants` trong JSON `THÔNG TIN CUỘC HỌP`. Không tìm được → "Unassigned". Tên assignee phải khớp chính xác với trường `name` hoặc `username`.
-2. **due_date** định dạng YYYY-MM-DD.
-3. Giữ nguyên các phần đã tốt, chỉ sửa phần được góp ý.
-
-## THÔNG TIN CUỘC HỌP (METADATA) - chứa danh sách participants hợp lệ:
-{metadata}
-
-## BẢN NHÁP HIỆN TẠI:
-{draft_summary}
-
-## ACTION ITEMS HIỆN TẠI:
-{draft_action_items}
-
-## PHẢN HỒI CẦN SỬA:
-{critique}
-
-## TRANSCRIPT GỐC (tham khảo):
+### Transcript:
 {transcript}
 
-Hãy output bản cải thiện với các sửa đổi theo phản hồi."""
+### Draft Summary:
+{summary}
+
+### Draft Action Items:
+{action_items}
+
+## YÊU CẦU OUTPUT:
+Hãy đánh giá dựa trên các tiêu chí trên và trả về kết quả dưới dạng JSON (được định nghĩa trong schema).
+
+Trong trường `critique`, hãy trình bày suy nghĩ của bạn theo từng tiêu chí:
+"- Completeness: ...
+ - Accuracy: ...
+ - Validity: ...
+ - Format: ...
+ => Kết luận: ..."
+
+Trường `decision` chỉ nhận giá trị "accept" hoặc "revise"."""
+
+
+REFINEMENT_PROMPT = """Bạn là Editor chuyên nghiệp. Nhiệm vụ: Sửa lại Summary và Action Items dựa trên Phản hồi (Critique).
+
+## DỮ LIỆU ĐẦU VÀO:
+- **Critique**: {critique} (Chỉ sửa những lỗi được nêu ở đây).
+- **Draft Summary**: {draft_summary}
+- **Draft Action Items**: {draft_action_items}
+- **Transcript**: {transcript} (Tham khảo để sửa cho đúng thực tế).
+- **Metadata**: {metadata} (Tham khảo danh sách participants).
+
+## YÊU CẦU:
+1. **Sửa lỗi**: Khắc phục triệt để các lỗi hallucination, thiếu task, sai assignee/due date được nêu trong Critique.
+2. **Giữ nguyên**: Những phần KHÔNG bị critique thì giữ nguyên giá trị cũ.
+
+Hãy trả về phiên bản Summary và Action Items đã hoàn thiện (Final Version)."""

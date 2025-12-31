@@ -25,23 +25,23 @@ logger = logging.getLogger(__name__)
 param_dict = {
     'router_kwargs': {
         'model_provider': 'gemini',
-        'model_name': 'gemini-2.5-flash-lite',
-        'temperature': 0.3,
-        'top_p': 0.5,
-        'max_tokens': 100,
+        'model_name': 'gemini-2.0-flash-lite',
+        'temperature': 0.1,
+        'top_p': 0.3,
+        'max_tokens': 200,
     },
     'direct_kwargs': {
         'model_provider': 'gemini',
-        'model_name': 'gemini-2.5-flash-lite',
+        'model_name': 'gemini-2.0-flash',
         'temperature': 0.5,
         'top_p': 0.9,
-        'max_tokens': 200,
+        'max_tokens': 500,
     },
     'large_deterministic_kwargs': { # tool_call
         'model_provider': 'gemini',
-        'model_name': 'gemini-2.5-flash-lite',
-        'temperature': 0.3,
-        'top_p': 0.5,
+        'model_name': 'gemini-2.0-flash',
+        'temperature': 0.1,
+        'top_p': 0.3,
     },
 }
 
@@ -137,7 +137,7 @@ class AgenticProjectManager:
         """Router node to decide between Tool Call and Direct generation"""
         
         query = state['query']
-        prompt = """Phân loại câu hỏi vào 1 trong 3 nhánh:
+        prompt = """Phân loại câu hỏi vào 1 trong 2 nhánh:
 
 DIRECT - Trả lời trực tiếp:
 • Chào hỏi, cảm ơn, small talk
@@ -185,34 +185,40 @@ VÍ DỤ:
         
         tool_prompt = """Bạn là PM Assistant - Trợ lý quản lý dự án.
 
-NHIỆM VỤ: Sử dụng linh hoạt các Tools để trả lời user.
+NHIỆM VỤ: Sử dụng linh hoạt các Tools để trả lời user. Dữ liệu hệ thống là UUID, nhưng User sẽ hỏi bằng TÊN tự nhiên.
 
-TOOLS:
-Hệ thống cung cấp danh sách tools. Hãy xem kỹ định nghĩa của chúng:
-- `get_user_projects()`: Lấy danh sách dự án (quan trọng để tìm Project ID).
-- `get_project_details(project_id)`: Xem mô tả, thành viên dự án.
-- `get_project_tasks(project_id)`: Xem công việc.
-- `get_project_meetings(project_id)`: Xem lịch họp/danh sách cuộc họp.
-- `create_task(...)` / `update_task_status(...)`: Thao tác task.
+QUY TẮC BẤT BIẾN:
+Nếu cần gọi một tool yêu cầu `_id` (project_id, task_id, meeting_id, user_id) mà bạn chưa có UUID đó:
+-> BẠN PHẢI TÌM NÓ TRƯỚC. KHÔNG ĐƯỢC HỎI USER.
 
-QUY TRÌNH XỬ LÝ (QUAN TRỌNG):
-1. **Tìm ID trước**: Nếu user nói tên dự án (VD: "AI App"), BẮT BUỘC gọi `get_user_projects()` để tìm ID tương ứng. KHÔNG dùng tên làm ID.
-2. **Chuỗi hành động (Chain)**: 
-   - Bước 1: Gọi tool tìm kiếm/lấy thông tin (VD: get_user_projects).
-   - Bước 2: Dựa vào kết quả Bước 1, gọi tiếp tool xử lý (VD: get_project_tasks HOẶC get_project_meetings với ID vừa tìm được).
-   - Bước 3: Tổng hợp kết quả và trả lời user bằng Tiếng Việt.
-3. **Phối hợp Tools**:
-   - Nếu hỏi "Tình hình dự án A thế nào?", hãy gọi cả `get_project_details`, `get_project_tasks` VÀ `get_project_meetings` để có cái nhìn toàn diện.
+BẢN ĐỒ DỮ LIỆU (Cách tìm ID):
+1. **Project ID**:
+   - Cổng vào duy nhất: `get_user_projects()`.
+   - Tìm tên dự án user nói -> Lấy ID.
 
-LUÔN KIỂM TRA:
-- Nếu Tool trả về kết quả: Đọc kỹ. Có cần gọi tool tiếp theo không? Hay đã đủ thông tin để trả lời?
-- Nếu đã đủ thông tin: Hãy viết câu trả lời tổng hợp cuối cùng.
+2. **Task ID**:
+   - Cần Project ID trước.
+   - Gọi `get_project_tasks(project_id)`.
+   - Duyệt danh sách -> Tìm task có title khớp -> Lấy Task ID.
+   - Dùng ID này cho: `update_task_status`, xem chi tiết task...
 
-QUY TẮC TRẢ LỜI (RẤT QUAN TRỌNG):
-- **KHÔNG BAO GIỜ** hiển thị ID (UUID) trong câu trả lời cuối cùng cho User. ID chỉ dùng để gọi tool.
-- Thay vì "Dự án ID 1234...", hãy nói "Dự án [Tên Dự Án]".
-- Thay vì "Task ID abc-xyz...", hãy nói "Task [Tên Task]".
-- Tập trung vào thông tin có ý nghĩa: Tên, Trạng thái, Deadline, Phụ trách.
+3. **Meeting ID**:
+   - Cần Project ID trước.
+   - Gọi `get_project_meetings(project_id)`.
+   - Tìm cuộc họp theo chủ đề/thời gian -> Lấy Meeting ID.
+
+4. **User ID** (Assignee):
+   - **Người khác**: Cần Project ID -> Gọi `get_project_details(project_id)` -> Map tên sang ID.
+   - **"Tôi" (Current User)**: Gọi `get_current_user_info()` -> Lấy ID của người đang chat.
+
+VÍ DỤ TƯ DUY:
+- User: "Dời lịch họp 'Kickoff' sang mai" -> Tìm Project -> Tìm Meeting ID.
+- User: "Giao task này cho TÔI" -> Gọi `get_current_user_info()` lấy ID -> Update task.
+
+LƯU Ý CUỐI:
+- Luôn kiểm tra kỹ danh sách trả về để tìm khớp tên nhất có thể.
+- Nếu không tìm thấy tên khớp, hãy liệt kê các mục khả dĩ để User chọn.
+- **TUYỆT ĐỐI KHÔNG hiển thị UUID/ID trong câu trả lời cho User.** Chỉ dùng Tên (Name/Title). Việc để lộ ID bị coi là lỗi nghiêm trọng.
 """
 
         # Build message history
@@ -275,19 +281,22 @@ QUY TẮC TRẢ LỜI (RẤT QUAN TRỌNG):
                     
                     tool_messages.append(ToolMessage(
                         content=json.dumps(result, ensure_ascii=False, default=str),
-                        tool_call_id=tool_id
+                        tool_call_id=tool_id,
+                        name=tool_name
                     ))
                     
                 except Exception as e:
                     logger.error(f"Error: {str(e)}")
                     tool_messages.append(ToolMessage(
                         content=f"Error: {str(e)}",
-                        tool_call_id=tool_id
+                        tool_call_id=tool_id,
+                        name=tool_name
                     ))
             else:
                 tool_messages.append(ToolMessage(
                     content=f"Unknown tool: {tool_name}",
-                    tool_call_id=tool_id
+                    tool_call_id=tool_id,
+                    name=tool_name
                 ))
                     
         return {'messages': tool_messages}

@@ -168,7 +168,7 @@ def update_task_status(task_id: str, status: str) -> Dict[str, Any]:
     
     Args:
         task_id: ID của task
-        status: Trạng thái mới (To Do / In Progress / Done)
+        status: Trạng thái mới (To Do / In Progress / Review / Done)
     
     Returns:
         Task sau khi update
