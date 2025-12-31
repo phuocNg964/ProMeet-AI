@@ -95,12 +95,34 @@ async def analyze_meeting(
             
             # Check if we should Human Review
             if not skip_review:
+                # Helper to map Name -> ID
+                # We need to do this because the UI expects IDs in the dropdown, but AI returns Names.
+                # Use the participants list to find the ID.
+                mapped_items = []
+                # Create a mapping dictionary for case-insensitive name/username -> ID
+                name_to_id = {}
+                for p in request.participants:
+                    if p.name: name_to_id[p.name.lower()] = p.id
+                    # if p.username: name_to_id[p.username.lower()] = p.id # Schema has no username
+
+                for item in final_state.get("action_items", []):
+                     # Copy item to avoid mutating original state if needed elsewhere (though state is ephemeral here)
+                     new_item = item.copy()
+                     assignee_name = new_item.get("assignee")
+                     if assignee_name and assignee_name.lower() != "unassigned":
+                         # Try to find ID
+                         found_id = name_to_id.get(assignee_name.lower())
+                         if found_id:
+                             new_item["assignee"] = found_id
+                         # If not found, keep as Name (UI might show it as unknown or text)
+                     mapped_items.append(new_item)
+
                 return MeetingAnalyzeResponse(
                     meeting_id=request.meeting_id,
                     status="waiting_review",
                     thread_id=request.meeting_id,
                     summary=final_state.get("summary"), 
-                    action_items=final_state.get("action_items", []),
+                    action_items=mapped_items,
                     transcript=final_state.get("transcript")
                 )
             

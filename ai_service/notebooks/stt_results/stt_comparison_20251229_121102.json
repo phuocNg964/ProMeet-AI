@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-12-29T12:11:02.846953",
+  "audio_file": "e:\\Individual\\Projects\\ProMeet\\server\\static\\recordings\\f3f2abf1-266f-4bf2-ad77-4a19fdf8cb57.webm",
+  "audio_duration_seconds": 210.28575,
+  "whisper_result": {
+    "provider": "whisper-base",
+    "audio_file": "e:\\Individual\\Projects\\ProMeet\\server\\static\\recordings\\f3f2abf1-266f-4bf2-ad77-4a19fdf8cb57.webm",
+    "transcript": " Hello, chào láng, em có đó không?  Anh em mình nhận khoảng 3 phút để chúc nhận nhận sắp thats trên hệ thống cho screen 42 này nhé.  Anh vừa tạo mới các tích kẹt mới, cần đi nó thông tin để đẩy vào database.  Vâng, em đay ăn hầu mới, em đang mở bản thats đây rồi, anh đọc đi em ốc đét luôn cho nóng.  Ok, cái đầu tiên quan trọng nhất, thay thồ là tích hợp cộng thân tán VN Pay.  Cái này, description anh đã vì rõ là cần sự lý cả phần IBM khó bát nhé.  Vâng, cái này quan trọng, priority chất trắng là hai rồi.  Thats, em sẽ để là bách N và pay mình.  Chỗ, về độ khó, em ước hưởng points là bao nhiêu.  Hhmm, cái này dính đến tỉnh nông, cần tết kỷ, em nghĩ points là tám.  Đồng ý, tám điểm.  Về thời gian, stop-det, mình để là sáng mai, ngày 4th tham bì hai nhé.  Do-det, anh cần sống trước này 10th tham bì hai.  Em gán ở xài, anh sẽ sớm tên đợt cho bạn túng bách Nhiếp Anh.  Rồi à, em đã ở xài cho túng.  Stay tất hiện tại, em để là thu đương nhé.  Tiếp theo, thats thứ 2, thay thồ là thích kế lại do diễn dodge bọc báo cáo.  Cái này, description là làm theo phi phích má mới của bên đi dài dữ sáng này nhé.  Tập trung vào đắc mốt.  Ah, cái này em xem rồi.  Priority để medium thuán nhỉ, vì tính năng cộ vận trại đường.  Ở medium cũng đường.  Nhưng thats nhớ đánh là front end và UI UX.  Vâng, cái này em thấy không có phức tạp nhưng nhiều không pô nền lạc vặt.  Points em để là 5 nhé.  Ok, 5 điểm.  Stop-det là ngày 5th tham bì hai.  Thang điều đet cho thư thả 1 chút, ngày 12 tháng 12 nhé.  Thats này ở say UID em gán cho chính MD là nhé.  Ok, anh em nhận thats này.  Rồi, có 1 cái cuối cùng hơi gấp.  Thay thồ là fixed lỗi crush app khi ấp lót ảnh quá 5MB.  Priority, cái này phải là critical hoặc hai đe la ngạp.  Vâng lỗi này khách kêu nhiều để em zet priority là hả.  Priority là hai.  Thats là bốc và mô bài.  Points, cái này chắc nhỏ thôi, phức nhăn mẹ.  Vâng, points là hai thôi ả.  Em các làm luôn chịu này.  Stop-det là hôm nay ngày 3 tháng 12.  Điều đet cũng là ngày 3 tháng 12 luôn.  Em ở say cho em luôn nhé.  Khang lang đăng ôm cái dashboard rồi.  Em bơn ở say UID cho bạn Nam mô bài đi.  Để Nam làm cái này.  Vâng, OK để em chuyển sang cho Nam.  Status em chuyển luôn sang in progress nhé.  Vì Nam đang ngồi cạnh em bảo làm luôn được.  OK, trước thế nhé.  Tổng kết lại mình có 3 thats chính.  Thân tán DNP, Tổng Lam, 8.  UI Dropbox, Lang Lam, 5.  Facebook, upload ảnh, Nam Lam, 2.  Tất cả project ID đều thuộc dự án sức vừa app về 2 nhé.  Em chắc lại lần cuối rồi lưu vào DB giúp anh.  Dạ vâng đủ hết thông tin rồi anh.  Em lưu đây.  Cảm ơn em, bài nhé.  Bài anh.",
+    "latency_seconds": 24.043225288391113,
+    "audio_duration_seconds": 210.28575,
+    "real_time_factor": 0.11433597040403885,
+    "error": null,
+    "timestamp": "2025-12-29T12:10:31.804897"
+  },
+  "gemini_result": {
+    "provider": "gemini-gemini-2.0-flash",
+    "audio_file": "e:\\Individual\\Projects\\ProMeet\\server\\static\\recordings\\f3f2abf1-266f-4bf2-ad77-4a19fdf8cb57.webm",
+    "transcript": "Tuyệt vời, đây là bản ghi chép từ audio bạn cung cấp theo định dạng yêu cầu:\n\n[00:00:00] Anh Hùng: Alo, chào Lan, em có đó không? Anh em mình dành khoảng 3 phút để chốt nhanh danh sách task trên hệ thống cho Spring 42 này nhé. Anh vừa tạo mấy cái ticket mới, cần điền nốt thông tin để đẩy vào database.\n[00:00:13] Lan: Vâng em đây anh Hùng ơi, em đang mở bảng task đây rồi. Anh đọc đi, em update luôn cho nóng.\n[00:00:19] Anh Hùng: Ok, cái đầu tiên quan trọng nhất. Title là tích hợp cổng thanh toán VNPay. Cái này description anh đã ghi rõ là cần xử lý cả phần IBN callback nhé.\n[00:00:30] Lan: Vâng, cái này quan trọng. Priority chắc chắn là 2 rồi. Task em sẽ để là backend và payment.\n[00:00:38] Anh Hùng: Chuẩn. Về độ khó, em ước lượng points là bao nhiêu?\n[00:00:42] Lan: Hừm, cái này dính đến tiền nong, cần test kỹ. Em nghĩ points là 8.\n[00:00:48] Anh Hùng: Đồng ý, 8 điểm. Về thời gian, start date mình để là sáng mai ngày 4 tháng 12 nhé. Due date anh cần xong trước ngày 10 tháng 12. Em gán assign and sister intendant cho bạn Túng backend giúp anh.\n[00:01:03] Lan: Rồi ạ, em đã assign cho Túng. Status hiện tại em để là to do nhé.\n[00:01:09] Anh Hùng: Tiếp theo, task thứ hai. Title là thiết kế lại giao diện dashboard báo cáo. Cái này description là làm theo file Figma mới của bên design gửi sáng nay nhé. Tập trung vào Dark Mode.\n[00:01:22] Lan: À, cái này em xem rồi. Priority để medium thôi anh nhỉ? Vì tính năng cũ vẫn chạy được.\n[00:01:29] Anh Hùng: Ừ, medium cũng được. Nhưng task nhớ đánh là frontend và UI UX.\n[00:01:36] Lan: Vâng. Cái này em thấy không quá phức tạp nhưng nhiều component lặt vặt. Points em để là năm nhé.\n[00:01:44] Anh Hùng: Ok, năm điểm. Start date là ngày 5 tháng 12, còn due date cho thư thả một chút, ngày 12 tháng 12 nhé. Task này assign UID em gán cho chính em đi, Lan nhé.\n[00:01:58] Lan: Ok anh, em nhận task này.\n[00:02:01] Anh Hùng: Rồi, còn một cái cuối cùng hơi gấp. Title là fix lỗi crash app khi upload ảnh quá 5MB. Priority cái này phải là critical hoặc high đấy Lan ạ.\n[00:02:14] Lan: Vâng, lỗi này khách kêu nhiều. Để em set priority là high. Task là bug và mobile. Points cái này chắc nhỏ thôi, fix nhanh mà.\n[00:02:26] Lan: Vâng, points là 2 thôi ạ. Em cắt làm luôn chiều nay. Start date là hôm nay ngày 3 tháng 12, due date cũng là ngày 3 tháng 12 luôn. Em assign cho em luôn nhé.\n[00:02:39] Anh Hùng: Khoan, Lan đang ôm cái dashboard rồi. Em assign UID cho bạn Nam mobile đi, để Nam làm cái này.\n[00:02:48] Lan: À vâng, ok, để em chuyển sang cho Nam. Status em chuyển luôn sang in progress nhé, vì Nam đang ngồi cạnh em, bảo làm luôn được.\n[00:02:58] Anh Hùng: Ok, chốt thế nhé. Tổng kết lại mình có ba task chính. Thanh toán VNPay Túng làm 8 điểm, UI Dropbox Lan làm 5 điểm, Fix bug Upload ảnh Nam làm 2 điểm. Tất cả project ID đều thuộc dự án Super App V2 nhé. Em check lại lần cuối rồi lưu vào DB giúp anh.\n[00:03:23] Lan: Dạ vâng, đủ hết thông tin rồi anh, em lưu đây.\n[00:03:27] Anh Hùng: Cảm ơn em, bye nhé.\n[00:03:29] Lan: Bye anh.\n\nHy vọng bản ghi này hữu ích cho bạn. Nếu bạn cần gì thêm, cứ hỏi nhé!\n",
+    "latency_seconds": 26.814887523651123,
+    "audio_duration_seconds": null,
+    "real_time_factor": null,
+    "error": null,
+    "timestamp": "2025-12-29T12:11:02.845266"
+  },
+  "wer_comparison": null,
+  "cost_comparison": {
+    "whisper": {
+      "provider": "whisper-base",
+      "audio_duration_minutes": 3.5047625,
+      "estimated_cost_usd": 7.009525e-05,
+      "pricing_model": "Local compute: ~20W CPU, $0.12/kWh",
+      "notes": "Does not include initial model download or GPU costs"
+    },
+    "gemini": {
+      "provider": "gemini-gemini-2.0-flash",
+      "audio_duration_minutes": 3.5047625,
+      "estimated_cost_usd": 7.885715625e-05,
+      "pricing_model": "Gemini 2.0 Flash: $0.015/1M input tokens",
+      "notes": "Estimated 5257 tokens for 3.5 min audio"
+    }
+  },
+  "summary": {
+    "audio_duration_seconds": 210.28575,
+    "latency": {
+      "whisper": 24.043225288391113,
+      "gemini": 26.814887523651123
+    },
+    "wer": {},
+    "cost": {},
+    "winner": {
+      "latency": "whisper",
+      "cost": "whisper"
+    }
+  }
+}

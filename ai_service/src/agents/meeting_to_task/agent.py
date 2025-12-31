@@ -46,9 +46,9 @@ class MeetingToTaskAgent:
         """
         self.model = call_llm(
             model_provider='gemini',
-            model_name='gemini-2.5-flash',
+            model_name='gemini-2.0-flash-lite',
             temperature=0.3,
-            top_p=0.7,
+            top_p=0.5,
         )
         self.memory = _memory_store # Use global instance
         self.graph = self._build_graph()
@@ -163,6 +163,7 @@ class MeetingToTaskAgent:
         messages = [
             HumanMessage(content=REFLECTION_PROMPT.format(
                 metadata=metadata_str,
+                transcript=state['transcript'],
                 summary=state['summary'],
                 action_items=action_items_str
             ))
@@ -276,8 +277,17 @@ class MeetingToTaskAgent:
                 continue
             
             # Format email riêng cho task này
+            # Resolve assignee name nicely
+            display_name = assignee.title()
+            for p in participants:
+                # If assignee matches ID, use Name
+                if str(p.get('id')) == assignee or str(p.get('userId')) == assignee:
+                    if p.get('name'):
+                        display_name = p.get('name')
+                        break
+            
             email_body = format_email_body_for_assignee(
-                assignee_name=assignee.title(),
+                assignee_name=display_name,
                 assignee_task=task,
                 summary=summary,
                 meeting_metadata=meeting_metadata

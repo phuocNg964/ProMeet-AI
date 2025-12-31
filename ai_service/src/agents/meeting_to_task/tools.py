@@ -97,7 +97,7 @@ def transcribe_audio(audio_file_path: str, use_mock: bool = False, provider: str
             
             # Generate Content using the Client
             response = client.models.generate_content(
-                model='gemini-2.0-flash', # Updated to latest or keep 1.5/2.0
+                model='gemini-2.0-flash-lite', # Updated to latest or keep 1.5/2.0
                 contents=[
                     types.Content(
                         parts=[
@@ -127,8 +127,12 @@ def get_emails_from_participants(participants: List[dict]) -> Dict[str, str]:
     for participant in participants:
         name = participant.get('name')
         email = participant.get('email')
-        if name and email:
-            emails[name.lower()] = email
+        uid = participant.get('id')
+        if email:
+            if name:
+                emails[name.lower()] = email
+            if uid:
+                emails[str(uid)] = email
     return emails
 
 
@@ -201,8 +205,16 @@ def create_tasks(
         # Simplified Logic for brevity
         try:
             # Prepare fields
-            assignee_name = item.get("assignee", "").lower()
-            assigned_user_id = user_mapping.get(assignee_name)
+            assignee_val = item.get("assignee", "")
+            assigned_user_id = None
+            
+            # Check if assignee_val is already an ID (present in mapping values)
+            valid_ids = set(user_mapping.values())
+            if assignee_val in valid_ids:
+                assigned_user_id = assignee_val
+            else:
+                 # Try to map from name
+                 assigned_user_id = user_mapping.get(assignee_val.lower())
             
             item_tags = []
             if item.get("tags"):

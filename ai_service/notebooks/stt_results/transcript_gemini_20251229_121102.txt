@@ -1,0 +1,27 @@
+Tuyệt vời, đây là bản ghi chép từ audio bạn cung cấp theo định dạng yêu cầu:
+
+[00:00:00] Anh Hùng: Alo, chào Lan, em có đó không? Anh em mình dành khoảng 3 phút để chốt nhanh danh sách task trên hệ thống cho Spring 42 này nhé. Anh vừa tạo mấy cái ticket mới, cần điền nốt thông tin để đẩy vào database.
+[00:00:13] Lan: Vâng em đây anh Hùng ơi, em đang mở bảng task đây rồi. Anh đọc đi, em update luôn cho nóng.
+[00:00:19] Anh Hùng: Ok, cái đầu tiên quan trọng nhất. Title là tích hợp cổng thanh toán VNPay. Cái này description anh đã ghi rõ là cần xử lý cả phần IBN callback nhé.
+[00:00:30] Lan: Vâng, cái này quan trọng. Priority chắc chắn là 2 rồi. Task em sẽ để là backend và payment.
+[00:00:38] Anh Hùng: Chuẩn. Về độ khó, em ước lượng points là bao nhiêu?
+[00:00:42] Lan: Hừm, cái này dính đến tiền nong, cần test kỹ. Em nghĩ points là 8.
+[00:00:48] Anh Hùng: Đồng ý, 8 điểm. Về thời gian, start date mình để là sáng mai ngày 4 tháng 12 nhé. Due date anh cần xong trước ngày 10 tháng 12. Em gán assign and sister intendant cho bạn Túng backend giúp anh.
+[00:01:03] Lan: Rồi ạ, em đã assign cho Túng. Status hiện tại em để là to do nhé.
+[00:01:09] Anh Hùng: Tiếp theo, task thứ hai. Title là thiết kế lại giao diện dashboard báo cáo. Cái này description là làm theo file Figma mới của bên design gửi sáng nay nhé. Tập trung vào Dark Mode.
+[00:01:22] Lan: À, cái này em xem rồi. Priority để medium thôi anh nhỉ? Vì tính năng cũ vẫn chạy được.
+[00:01:29] Anh Hùng: Ừ, medium cũng được. Nhưng task nhớ đánh là frontend và UI UX.
+[00:01:36] Lan: Vâng. Cái này em thấy không quá phức tạp nhưng nhiều component lặt vặt. Points em để là năm nhé.
+[00:01:44] Anh Hùng: Ok, năm điểm. Start date là ngày 5 tháng 12, còn due date cho thư thả một chút, ngày 12 tháng 12 nhé. Task này assign UID em gán cho chính em đi, Lan nhé.
+[00:01:58] Lan: Ok anh, em nhận task này.
+[00:02:01] Anh Hùng: Rồi, còn một cái cuối cùng hơi gấp. Title là fix lỗi crash app khi upload ảnh quá 5MB. Priority cái này phải là critical hoặc high đấy Lan ạ.
+[00:02:14] Lan: Vâng, lỗi này khách kêu nhiều. Để em set priority là high. Task là bug và mobile. Points cái này chắc nhỏ thôi, fix nhanh mà.
+[00:02:26] Lan: Vâng, points là 2 thôi ạ. Em cắt làm luôn chiều nay. Start date là hôm nay ngày 3 tháng 12, due date cũng là ngày 3 tháng 12 luôn. Em assign cho em luôn nhé.
+[00:02:39] Anh Hùng: Khoan, Lan đang ôm cái dashboard rồi. Em assign UID cho bạn Nam mobile đi, để Nam làm cái này.
+[00:02:48] Lan: À vâng, ok, để em chuyển sang cho Nam. Status em chuyển luôn sang in progress nhé, vì Nam đang ngồi cạnh em, bảo làm luôn được.
+[00:02:58] Anh Hùng: Ok, chốt thế nhé. Tổng kết lại mình có ba task chính. Thanh toán VNPay Túng làm 8 điểm, UI Dropbox Lan làm 5 điểm, Fix bug Upload ảnh Nam làm 2 điểm. Tất cả project ID đều thuộc dự án Super App V2 nhé. Em check lại lần cuối rồi lưu vào DB giúp anh.
+[00:03:23] Lan: Dạ vâng, đủ hết thông tin rồi anh, em lưu đây.
+[00:03:27] Anh Hùng: Cảm ơn em, bye nhé.
+[00:03:29] Lan: Bye anh.
+
+Hy vọng bản ghi này hữu ích cho bạn. Nếu bạn cần gì thêm, cứ hỏi nhé!
