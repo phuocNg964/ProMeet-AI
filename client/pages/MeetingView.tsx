@@ -157,9 +157,21 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
             const res = await api.triggerAiAnalysis(meeting.id, false, false);
 
             if (res.status === 'waiting_review') {
+                // Map API response (snake_case) to form fields (camelCase)
+                const mappedTasks = (res.action_items || []).map((item: any) => ({
+                    title: item.title || '',
+                    description: item.description || '',
+                    assignee: item.assignee || '',  // API returns user name, need to find user ID
+                    priority: item.priority || 'Medium',
+                    status: item.status || 'To Do',
+                    startDate: item.start_date || '',
+                    dueDate: item.due_date || '',
+                    tags: item.tags || []
+                }));
+
                 setReviewData({
                     summary: res.summary || '',
-                    tasks: res.action_items || []
+                    tasks: mappedTasks
                 });
                 setShowReview(true);
             } else if (res.status === 'completed') {
@@ -238,7 +250,8 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                     {reviewData.tasks.map((task, idx) => (
                                         <div key={idx} className="bg-slate-50 border border-slate-200 p-4 rounded-xl hover:border-indigo-300 transition group relative">
                                             <div className="flex gap-4">
-                                                <div className="flex-1 space-y-2">
+                                                <div className="flex-1 space-y-3">
+                                                    {/* Title */}
                                                     <input
                                                         className="w-full font-bold text-slate-800 bg-transparent border-b border-transparent focus:border-indigo-500 outline-none pb-1"
                                                         value={task.title}
@@ -249,8 +262,9 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                         }}
                                                         placeholder="Task Title"
                                                     />
+                                                    {/* Description */}
                                                     <textarea
-                                                        className="w-full text-sm text-slate-600 bg-transparent border-b border-transparent focus:border-indigo-500 outline-none resize-none"
+                                                        className="w-full text-sm text-slate-600 bg-white border border-slate-200 rounded-lg p-2 focus:border-indigo-500 outline-none resize-none"
                                                         value={task.description || ""}
                                                         onChange={(e) => {
                                                             const newTasks = [...reviewData.tasks];
@@ -258,13 +272,14 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                             setReviewData(prev => ({ ...prev, tasks: newTasks }));
                                                         }}
                                                         placeholder="Description (Optional)"
-                                                        rows={1}
+                                                        rows={2}
                                                     />
-                                                    <div className="flex gap-3 pt-1">
+                                                    {/* Row 1: Assignee, Status, Priority */}
+                                                    <div className="flex flex-wrap gap-3">
                                                         <div className="flex flex-col">
                                                             <label className="text-[10px] uppercase font-bold text-slate-400">Assignee</label>
                                                             <select
-                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 focus:border-indigo-500 outline-none w-32"
+                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none min-w-[120px]"
                                                                 value={task.assignee || ""}
                                                                 onChange={(e) => {
                                                                     const newTasks = [...reviewData.tasks];
@@ -284,9 +299,26 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                             </select>
                                                         </div>
                                                         <div className="flex flex-col">
+                                                            <label className="text-[10px] uppercase font-bold text-slate-400">Status</label>
+                                                            <select
+                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none min-w-[100px]"
+                                                                value={task.status || "To Do"}
+                                                                onChange={(e) => {
+                                                                    const newTasks = [...reviewData.tasks];
+                                                                    newTasks[idx].status = e.target.value;
+                                                                    setReviewData(prev => ({ ...prev, tasks: newTasks }));
+                                                                }}
+                                                            >
+                                                                <option value="To Do">To Do</option>
+                                                                <option value="In Progress">In Progress</option>
+                                                                <option value="Review">Review</option>
+                                                                <option value="Done">Done</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="flex flex-col">
                                                             <label className="text-[10px] uppercase font-bold text-slate-400">Priority</label>
                                                             <select
-                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 focus:border-indigo-500 outline-none"
+                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none min-w-[90px]"
                                                                 value={task.priority || "Medium"}
                                                                 onChange={(e) => {
                                                                     const newTasks = [...reviewData.tasks];
@@ -299,6 +331,37 @@ const MeetingDetail: React.FC<{ meeting: Meeting; onBack: () => void; currentUse
                                                                 <option value="Low">Low</option>
                                                             </select>
                                                         </div>
+                                                    </div>
+                                                    {/* Row 2: Due Date */}
+                                                    <div className="flex flex-wrap gap-3">
+                                                        <div className="flex flex-col">
+                                                            <label className="text-[10px] uppercase font-bold text-slate-400">Due Date</label>
+                                                            <input
+                                                                type="date"
+                                                                className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
+                                                                value={task.dueDate || ""}
+                                                                onChange={(e) => {
+                                                                    const newTasks = [...reviewData.tasks];
+                                                                    newTasks[idx].dueDate = e.target.value;
+                                                                    setReviewData(prev => ({ ...prev, tasks: newTasks }));
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    {/* Row 3: Tags */}
+                                                    <div className="flex flex-col">
+                                                        <label className="text-[10px] uppercase font-bold text-slate-400">Tags (comma separated)</label>
+                                                        <input
+                                                            type="text"
+                                                            className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 outline-none"
+                                                            value={Array.isArray(task.tags) ? task.tags.join(', ') : (task.tags || '')}
+                                                            onChange={(e) => {
+                                                                const newTasks = [...reviewData.tasks];
+                                                                newTasks[idx].tags = e.target.value.split(',').map((t: string) => t.trim()).filter((t: string) => t);
+                                                                setReviewData(prev => ({ ...prev, tasks: newTasks }));
+                                                            }}
+                                                            placeholder="e.g. frontend, urgent, bug"
+                                                        />
                                                     </div>
                                                 </div>
                                                 <button

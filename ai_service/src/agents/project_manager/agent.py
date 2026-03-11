@@ -21,25 +21,28 @@ from psycopg_pool import ConnectionPool
 
 logger = logging.getLogger(__name__)
 
+# Safety limit for tool call iterations
+MAX_TOOL_ITERATIONS = 10
+
 # --- CONFIGURATION ---
 param_dict = {
     'router_kwargs': {
         'model_provider': 'gemini',
         'model_name': 'gemini-2.0-flash-lite',
         'temperature': 0.1,
-        'top_p': 0.3,
+        'top_p': 0.3, 
         'max_tokens': 200,
     },
     'direct_kwargs': {
         'model_provider': 'gemini',
-        'model_name': 'gemini-2.0-flash',
-        'temperature': 0.5,
+        'model_name': 'gemini-2.5-flash',
+        'temperature': 1,
         'top_p': 0.9,
         'max_tokens': 500,
     },
     'large_deterministic_kwargs': { # tool_call
         'model_provider': 'gemini',
-        'model_name': 'gemini-2.0-flash',
+        'model_name': 'gemini-2.5-flash',
         'temperature': 0.1,
         'top_p': 0.3,
     },
@@ -49,7 +52,8 @@ param_dict = {
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
     query: str
-    router_decision: str #"DIRECT" or "TOOL_CALL"
+    router_decision: str  # "DIRECT" or "TOOL_CALL"
+    iteration_count: int  # Track tool call iterations to prevent infinite loops
 
 class RouterOutput(BaseModel):
     """Schema for Router"""
@@ -144,17 +148,33 @@ DIRECT - Trả lời trực tiếp:
 • Viết email, dịch thuật, soạn văn bản
 • Kiến thức chung (Agile, Scrum, REST API...)
 
-TOOL_CALL - Thao tác dữ liệu cá nhân:
-• Xem/tạo/cập nhật task CỦA TÔI
-• Tìm kiếm task/project của tôi
-• Thông tin tài khoản, profile của tôi
+TOOL_CALL - Truy xuất/Thao tác dữ liệu:
+• Thông tin Dự án, Tasks, Meetings
+• Tìm kiếm, tra cứu dữ liệu hệ thống
+• Thông tin cá nhân (Tasks của tôi, Profile)
+• Bất kỳ câu hỏi nào cần tra cứu ngữ cảnh dự án
 
 VÍ DỤ:
 • "Viết email xin hoãn deadline" → DIRECT
 • "Tasks của tôi" → TOOL_CALL
+• "Dự án A có gì?" → TOOL_CALL
+• "Danh sách task trong đó" -> TOOL_CALL
 """
+        # Inject history to understand context (e.g., "dự án đầu tiên")
+        # Sanitize history to text to avoid Gemini 400 errors with tool structures
+        raw_history = state.get('messages', [])[-10:]
+        history_context = ""
+        for msg in raw_history:
+            if isinstance(msg, HumanMessage):
+                history_context += f"User: {msg.content}\n"
+            elif isinstance(msg, AIMessage):
+                content = msg.content if msg.content else "[Tool Call Generated]"
+                history_context += f"AI: {content}\n"
+            
+        full_prompt = f"{prompt}\n\nLỊCH SỬ HỘI THOẠI:\n{history_context}"
+
         messages = [
-            SystemMessage(content=prompt),
+            SystemMessage(content=full_prompt),
             HumanMessage(content=query)
         ]
         
@@ -177,11 +197,11 @@ VÍ DỤ:
         return {'router_decision': decision}
     
     # Tool nodes
-    def tool_generator(self, state: AgentState) -> None:
-        """Generate tool calls if necessary"""
+    def tool_generator(self, state: AgentState) -> dict:
+        """Generate tool calls if necessary. Uses proper message history for multi-turn."""
         
-        messages = state['messages'][-5:]
         query = state['query']
+        current_iteration = state.get('iteration_count', 0)
         
         tool_prompt = """Bạn là PM Assistant - Trợ lý quản lý dự án.
 
@@ -219,28 +239,80 @@ LƯU Ý CUỐI:
 - Luôn kiểm tra kỹ danh sách trả về để tìm khớp tên nhất có thể.
 - Nếu không tìm thấy tên khớp, hãy liệt kê các mục khả dĩ để User chọn.
 - **TUYỆT ĐỐI KHÔNG hiển thị UUID/ID trong câu trả lời cho User.** Chỉ dùng Tên (Name/Title). Việc để lộ ID bị coi là lỗi nghiêm trọng.
+- Khi đã có đủ thông tin từ Tool Output, hãy TRẢ LỜI TRỰC TIẾP bằng text. KHÔNG gọi thêm tool nếu không cần thiết.
 """
 
-        # Build message history
-        if not messages:
-            # First turn
-            input_messages = [
-                SystemMessage(content=tool_prompt),
-                HumanMessage(content=query)
-            ]
+        # Build message history with proper separation:
+        # 1. CROSS-TURN HISTORY: Only HumanMessage + final AIMessage (text-only context)
+        # 2. CURRENT TURN: Full messages including ToolMessage for tool-calling loop
+        
+        raw_history = state.get('messages', [])
+        
+        # Find the CURRENT turn's start (last HumanMessage)
+        current_turn_start = -1
+        for i in range(len(raw_history) - 1, -1, -1):
+            if isinstance(raw_history[i], HumanMessage):
+                current_turn_start = i
+                break
+        
+        # Separate histories
+        if current_turn_start > 0:
+            previous_turns = raw_history[:current_turn_start]
+            current_turn = raw_history[current_turn_start:]
         else:
-            # Subsequent turns
-            input_messages = [
-                SystemMessage(content=tool_prompt),
-                HumanMessage(content=query),
-                *messages
-            ]
-            
-            # Helper: If last message was a Tool Output, force the model to look at it
-            if isinstance(messages[-1], ToolMessage):
-                input_messages.append(
-                    HumanMessage(content="Tool đã trả về kết quả trên. Hãy xem xét: 1. Cần gọi tool nào tiếp theo không? (VD: lấy ID xong thì lấy tasks). 2. Nếu xong rồi, hãy tóm tắt kết quả cho user.")
-                )
+            previous_turns = []
+            current_turn = raw_history if current_turn_start == 0 else []
+        
+        # --- CROSS-TURN CONTEXT (text-based, no ToolMessage) ---
+        # Extract only HumanMessage + final AIMessage content from previous turns
+        cross_turn_context = ""
+        for msg in previous_turns[-10:]:  # Limit to last 10 messages from prev turns
+            if isinstance(msg, HumanMessage):
+                cross_turn_context += f"User: {msg.content}\n"
+            elif isinstance(msg, AIMessage):
+                # Only include AIMessage with text content (final answers)
+                # Skip AIMessage with tool_calls (intermediate steps)
+                if msg.content and not (hasattr(msg, 'tool_calls') and msg.tool_calls):
+                    cross_turn_context += f"AI: {msg.content}\n"
+        
+        # --- CURRENT TURN MESSAGES (full, including ToolMessage) ---
+        # Sanitize current turn messages for Gemini's strict ordering
+        current_turn_messages = []
+        for msg in current_turn:
+            if isinstance(msg, HumanMessage):
+                current_turn_messages.append(msg)
+            elif isinstance(msg, AIMessage):
+                # Ensure AIMessage has content (Gemini may reject empty content with tool_calls)
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    current_turn_messages.append(AIMessage(
+                        content=msg.content if msg.content else "[Processing...]",
+                        tool_calls=msg.tool_calls
+                    ))
+                elif msg.content:
+                    current_turn_messages.append(msg)
+            elif isinstance(msg, ToolMessage):
+                # Include ToolMessage for current turn's tool-calling loop
+                current_turn_messages.append(msg)
+        
+        # Ensure current turn starts with HumanMessage
+        if not current_turn_messages or not isinstance(current_turn_messages[0], HumanMessage):
+            current_turn_messages.insert(0, HumanMessage(content=query))
+        
+        # Build system prompt with cross-turn context
+        if cross_turn_context:
+            full_system_prompt = f"{tool_prompt}\n\n--- LỊCH SỬ HỘI THOẠI TRƯỚC ---\n{cross_turn_context}\n--- HẾT LỊCH SỬ ---"
+        else:
+            full_system_prompt = tool_prompt
+        
+        # Build final input messages
+        input_messages = [
+            SystemMessage(content=full_system_prompt),
+            *current_turn_messages,
+        ]
+        
+        # Log for debugging
+        logger.debug(f"Cross-turn context length: {len(cross_turn_context)} chars")
+        logger.debug(f"Current turn messages: {[type(m).__name__ for m in current_turn_messages]}")
 
         response = self.llm_tool_call.invoke(input_messages)
         
@@ -248,21 +320,25 @@ LƯU Ý CUỐI:
         logger.info(f"Tool generator raw response content: {response.content}")
         tool_calls = getattr(response, 'tool_calls', [])
         logger.info(f"Tool generator tool_calls: {tool_calls}")
+        
 
         # FALLBACK: If model returns NOTHING (Empty text, No tools), force a response
         if not response.content and not tool_calls:
             logger.warning("Model returned empty response. Forcing a summary.")
             fallback_text = "Tôi đã kiểm tra dữ liệu nhưng có vẻ không tìm thấy thông tin cụ thể hoặc đã hoàn thành tác vụ. Bạn cần giúp gì thêm không?"
-            # Try to infer better context if possible, but keep it safe
             response = AIMessage(content=fallback_text)
-
-        return {'messages': [response]}
+        
+        return {
+            'messages': [response],
+            'iteration_count': current_iteration + 1
+        }
     
-    def take_action(self, state: AgentState) -> None:
+    def take_action(self, state: AgentState) -> dict:
+        """Execute tool calls from the last message."""
         last_message = state['messages'][-1]
         
-        if not last_message or not hasattr(last_message, 'tool_calls'):
-            return {'messages': []}    
+        if not last_message or not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
+            return {'messages': []}
             
         tool_messages = []
         for tool_call in last_message.tool_calls:
@@ -302,10 +378,10 @@ LƯU Ý CUỐI:
         return {'messages': tool_messages}
 
     # Direct answer node
-    def direct_generator(self, state: AgentState) -> None:
-        """Generate direct answer non-related queries"""
+    def direct_generator(self, state: AgentState) -> dict:
+        """Generate direct answer for non-tool-related queries."""
         
-        messages = state['messages'][-5:]
+        raw_history = state['messages'][-10:]
         query = state['query']
         system_prompt = """Bạn là trợ lý AI hữu ích và thân thiện.
 NHIỆM VỤ: Trả lời các câu hỏi giao tiếp thông thường, viết email, hoặc giải thích các khái niệm chung.
@@ -314,13 +390,24 @@ NGUYÊN TẮC:
 - Nếu câu hỏi liên quan đến dữ liệu dự án cụ thể mà bạn không biết, hãy gợi ý người dùng hỏi rõ hơn để dùng công cụ tra cứu.
 - KHÔNG bịa đặt dữ liệu dự án."""
 
-        messages = [
+        # Sanitize history to avoid Gemini 400 errors with tool_calls structures
+        sanitized_history = []
+        for msg in raw_history:
+            if isinstance(msg, HumanMessage):
+                sanitized_history.append(msg)
+            elif isinstance(msg, AIMessage):
+                # Only include content, strip tool_calls to avoid API errors
+                if msg.content:
+                    sanitized_history.append(HumanMessage(content=f"[Previous AI response]: {msg.content}"))
+            # Skip ToolMessage for direct generator - not relevant
+
+        input_messages = [
             SystemMessage(content=system_prompt),
-            *messages,
+            *sanitized_history,
             HumanMessage(content=query)
         ]
         
-        response = self.llm_direct.invoke(messages)
+        response = self.llm_direct.invoke(input_messages)
         
         logger.info(f"Direct generator response: {response.content}")
         

@@ -1,9 +1,11 @@
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import uuid
+import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
+# IMPORTANT: Set FLASK_SECRET_KEY environment variable in production.
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'change-me-in-production')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- LƯU TRỮ ---

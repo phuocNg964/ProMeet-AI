@@ -283,11 +283,23 @@ export async function triggerAiAnalysis(meetingId: string, background: boolean =
 
 /** Xác nhận kết quả phân tích AI và tạo task (Human-in-the-loop) */
 export async function confirmAiAnalysis(meetingId: string, updatedSummary: string, updatedTasks: any[]): Promise<any> {
+    // Convert camelCase (frontend) to snake_case (backend schema: MeetingTaskConfig)
+    const convertedTasks = updatedTasks.map(task => ({
+        title: task.title || '',
+        description: task.description || '',
+        assignee: task.assignee || null,
+        priority: task.priority || 'Medium',
+        status: task.status || 'To Do',
+        due_date: task.dueDate || null,  // camelCase -> snake_case
+        tags: Array.isArray(task.tags) ? task.tags.join(', ') : (task.tags || null)
+    }));
+
     const payload = {
         meeting_id: meetingId,
         updated_summary: updatedSummary,
-        updated_action_items: updatedTasks
+        updated_action_items: convertedTasks
     };
+    console.log("🔍 [DEBUG] Confirm Payload:", JSON.stringify(payload, null, 2));
     const res = await api.post(`/meetings/${meetingId}/confirm`, payload);
     return res.data;
 }

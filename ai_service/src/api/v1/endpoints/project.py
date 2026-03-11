@@ -39,7 +39,19 @@ def chat_project_manager(
         
         # Extract the last message content
         last_message = result['messages'][-1]
-        response_text = last_message.content
+        
+        # Handle structured content (list of blocks) vs string content
+        if isinstance(last_message.content, list):
+            # Extract text from blocks where type is 'text'
+            text_parts = []
+            for block in last_message.content:
+                if isinstance(block, dict) and block.get('type') == 'text':
+                    text_parts.append(block.get('text', ''))
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            response_text = "\n".join(text_parts)
+        else:
+            response_text = str(last_message.content)
         
         return ChatResponse(
             response=response_text,

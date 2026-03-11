@@ -31,7 +31,7 @@ class MeetingTaskConfig(BaseModel):
     title: str
     assignee: Optional[str] = None
     due_date: Optional[str] = None
-    priority: str = "Medium"
+    priority: Optional[str] = "Medium"  # Accept null, default to Medium
     tags: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = "To Do"
