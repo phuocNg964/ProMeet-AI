@@ -23,12 +23,12 @@ class MeetingAnalyzeRequest(BaseModel):
 
 class MeetingTask(BaseModel):
     title: str
-    assignee: Optional[str]
-    due_date: Optional[str]
-    priority: str
-    tags: Optional[str]
-    description: Optional[str]
-    status: Optional[str]
+    assignee: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: Optional[str] = None  # Made optional to match agent's ActionItem schema
+    tags: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
 
 class MeetingAnalyzeResponse(BaseModel):
     meeting_id: str

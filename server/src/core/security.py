@@ -21,7 +21,13 @@ load_dotenv()
 
 # --- 1. Cấu hình bảo mật ---
 # SECRET_KEY được dùng để ký chữ ký cho JWT Token (Rất quan trọng, phải giữ bí mật)
-SECRET_KEY = os.getenv("SECRET_KEY", "meetly_deep_secret_key_123")
+_secret = os.getenv("SECRET_KEY")
+if not _secret:
+    raise ValueError(
+        "SECRET_KEY environment variable is not set. "
+        "Generate a secure key with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+SECRET_KEY: str = _secret
 ALGORITHM = "HS256"
 # Token có hiệu lực trong bao lâu (Mặc định: 7 ngày)
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 

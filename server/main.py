@@ -1,13 +1,28 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles # Import cái này
+from fastapi.staticfiles import StaticFiles
 # --- API Router ---
 from src.api import router as api_router
 
 # --- Database ---
 from src.core.database import create_db_tables
 
-app = FastAPI(title="JiraMeet API")
+
+# --- Lifespan (replaces deprecated @app.on_event) ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Attempting to create database tables...")
+    try:
+        create_db_tables()
+        print("Database tables created successfully or already exist.")
+    except Exception as e:
+        print(f"❌ Error creating database tables: {e}")
+    yield  # Application runs here
+
+
+app = FastAPI(title="ProMeet API", lifespan=lifespan)
 
 # --- CORS ---
 origins = [
@@ -15,7 +30,7 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://[::1]:3000",          # IPv6 localhost
-    
+
     # Meeting Analysis Agent
     "http://localhost:5000",
     "http://127.0.0.1:5000",
@@ -38,18 +53,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # --- Health Check ---
 @app.get("/", tags=["Health Check"])
 def root():
-    return {"message": "JiraMeet AI Backend is operational! Visit /docs for API documentation."}
-
-
-# --- Startup Event (Create DB Tables) ---
-@app.on_event("startup")
-def on_startup():
-    print("Attempting to create database tables...")
-    try:
-        create_db_tables()
-        print("Database tables created successfully or already exist.")
-    except Exception as e:
-        print(f"❌ Error creating database tables: {e}")
+    return {"message": "ProMeet API is operational! Visit /docs for API documentation."}
 
 
 # --- Run server locally ---

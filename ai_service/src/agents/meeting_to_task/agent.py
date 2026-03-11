@@ -16,7 +16,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage
 
 # Import từ module này
-from .schemas import AgentState, MeetingOutput, ReflectionOutput
+from .schemas import AgentState, MeetingOutput, ReflectionOutput, ActionItem
 from .prompts import ANALYSIS_PROMPT, REFLECTION_PROMPT, REFINEMENT_PROMPT
 from .tools import (
     format_email_body_for_assignee, 
@@ -46,9 +46,9 @@ class MeetingToTaskAgent:
         """
         self.model = call_llm(
             model_provider='gemini',
-            model_name='gemini-2.0-flash-lite',
-            temperature=0.3,
-            top_p=0.5,
+            model_name='gemini-2.5-flash',
+            temperature=0.1,
+            top_p=0.3,
         )
         self.memory = _memory_store # Use global instance
         self.graph = self._build_graph()
@@ -88,7 +88,6 @@ class MeetingToTaskAgent:
         # Edge: create_tasks -> notification -> END
         builder.add_edge('create_tasks', 'notification')
         builder.add_edge('notification', END)
-        # builder.add_edge('create_tasks', END)
         # Compile graph với memory và interrupt_before
         return builder.compile(
             checkpointer=self.memory,
@@ -99,31 +98,32 @@ class MeetingToTaskAgent:
     
     def _stt(self, state: AgentState):
         """Node 1: Chuyển đổi âm thanh thành văn bản"""
+        logger.info("\n[NODE 1] Speech-to-Text")
+        
         # Check if transcript is already provided in state (e.g. from API)
         if state.get('transcript'):
-            logger.info(f"  📝 Using provided transcript ({len(state['transcript'])} chars)")
-            return {'transcript': state['transcript']}
-            
-        logger.info("\n[NODE 1] Đang chuyển đổi âm thanh thành văn bản...")
+            transcript = state['transcript']
+            logger.info(f"Using provided transcript")
+        else:
+            participants = state.get('meeting_metadata', {}).get('participants', [])
+            transcript = transcribe_audio(
+                state['audio_file_path'], 
+                provider='gemini', 
+                use_mock=False,
+                participants=participants
+            )
         
-        # In production: Audio should be downloaded from S3 or passed as bytes.
-        # Here we assume audio_file_path is accessible (e.g. shared volume or local dev)
-                
-        transcript = transcribe_audio(
-            state['audio_file_path'], 
-            provider='gemini', 
-            use_mock=False
-        )
+        # Log length and preview
+        logger.info(f"Transcript length: {len(transcript)} characters")
+        preview = transcript[:200].replace('\n', ' ').strip()
+        logger.info(f"Preview: {preview}...")
         
-        logger.info(f"  ✅ Transcript: {len(transcript)} ký tự")
         return {'transcript': transcript}
     
     def _analysis(self, state: AgentState):
         """Node 2: Phân tích và tạo Summary + Action Items"""
-        logger.info("\n[NODE 2] Đang phân tích và tạo Summary...")
+        logger.info("\n[NODE 2] Meeting Analysis")
         
-        # Pass the entire metadata object to the prompt to make the agent more robust
-        # to changes in the metadata structure.
         metadata_str = json.dumps(state.get('meeting_metadata', {}), indent=2, ensure_ascii=False)
         
         messages = [
@@ -144,8 +144,12 @@ class MeetingToTaskAgent:
         # Chuyển đổi action items sang dict
         action_items_list = [item.model_dump() for item in response.action_items]
         
-        logger.info(f"  ✅ Summary: {len(response.summary)} ký tự")
-        logger.info(f"  ✅ Action Items: {len(action_items_list)} items")
+        # Log Summary
+        logger.info(f"Summary:\n{response.summary}")
+        
+        # Log Tasks (pretty print)
+        logger.info(f"Tasks ({len(action_items_list)}):")
+        logger.info(json.dumps(action_items_list, indent=2, ensure_ascii=False))
         
         return {
             'summary': response.summary,
@@ -154,16 +158,25 @@ class MeetingToTaskAgent:
     
     def _reflection(self, state: AgentState):
         """Node 3: Tự kiểm tra và phát hiện lỗi"""
-        logger.info("\n[NODE 3] Đang tự kiểm tra chất lượng...")
+        logger.info("\n[NODE 3] Quality Check")
         
         # Pass the entire metadata object to the prompt for context.
         metadata_str = json.dumps(state.get('meeting_metadata', {}), indent=2, ensure_ascii=False)
         action_items_str = json.dumps(state['action_items'], indent=2, ensure_ascii=False)
-        
+        # Get schema definition for validation anchor
+        schema_str = json.dumps(ActionItem.model_json_schema(), indent=2, ensure_ascii=False)
+
+        # Simplified Participants List for Anchor
+        participants = state.get('meeting_metadata', {}).get('participants', [])
+        p_names = [p.get('name', '') for p in participants if p.get('name')]
+        participants_str = ", ".join(p_names)
+
         messages = [
             HumanMessage(content=REFLECTION_PROMPT.format(
                 metadata=metadata_str,
+                participants_list=participants_str,
                 transcript=state['transcript'],
+                schema=schema_str,
                 summary=state['summary'],
                 action_items=action_items_str
             ))
@@ -171,14 +184,21 @@ class MeetingToTaskAgent:
         
         response = self.model.with_structured_output(ReflectionOutput).invoke(messages)
         
-        logger.info(f"  📝 Critique: {response.critique}")
-        logger.info(f"  🎯 Decision: {response.decision}")
+        # Error handling for None response
+        if response is None:
+            logger.error("Reflection: LLM returned None response")
+            return {'critique': 'LLM failed to respond', 'reflect_decision': 'accept'}
         
+        # Log decision and critique
+        logger.info(f"Decision: {response.decision}")
+        logger.info(f"Critique: {response.critique}")
+
         return {'critique': response.critique, 'reflect_decision': response.decision}
     
     def _refinement(self, state: AgentState):
         """Node 4: Tinh chỉnh dựa trên phản hồi"""
-        logger.info("\n[NODE 4] Tinh chỉnh Summary...")
+        revision_count = state.get('revision_count', 0) + 1
+        logger.info(f"\n[NODE 4] Refinement (Revision #{revision_count})")
         
         # Pass the entire metadata object to the prompt for context.
         metadata_str = json.dumps(state.get('meeting_metadata', {}), indent=2, ensure_ascii=False)
@@ -196,10 +216,17 @@ class MeetingToTaskAgent:
         
         response = self.model.with_structured_output(MeetingOutput).invoke(messages)
         
-        refined_action_items = [item.model_dump() for item in response.action_items]
-        revision_count = state.get('revision_count', 0) + 1
+        # Error handling for None response
+        if response is None:
+            logger.error("Refinement: LLM returned None response, keeping original")
+            return {'revision_count': revision_count}
         
-        logger.info(f"  🔄 Revision #{revision_count}")
+        refined_action_items = [item.model_dump() for item in response.action_items]
+        
+        # Log refined Summary and Tasks
+        logger.info(f"Refined Summary:\n{response.summary}")
+        logger.info(f"Refined Tasks ({len(refined_action_items)}):")
+        logger.info(json.dumps(refined_action_items, indent=2, ensure_ascii=False))
         
         return {
             'summary': response.summary,
@@ -209,8 +236,7 @@ class MeetingToTaskAgent:
     
     def _create_tasks(self, state: AgentState):
         """Node 5: Tạo tasks trong hệ thống backend"""
-        logger.info("\n[NODE 5] Tạo tasks...")
-        summary: str
+        logger.info("\n[NODE 5] Create Tasks")
         action_items = state.get('action_items', [])
         meeting_metadata = state.get('meeting_metadata', {})
         participants = meeting_metadata.get('participants', [])
@@ -236,12 +262,18 @@ class MeetingToTaskAgent:
             user_mapping=user_mapping
         )
         
-        logger.info(f"  📊 Created {len(tasks)} tasks")
+        # Log status
+        if tasks:
+            successful = len([t for t in tasks if t.get('status') != 'error'])
+            logger.info(f"Status: Successful - Created {successful}/{len(tasks)} tasks")
+        else:
+            logger.info(f"Status: Failed - No tasks created")
+        
         return {'tasks_created': tasks}
     
     def _notification(self, state: AgentState):
         """Node 6: Gửi thông báo tới từng assignee"""
-        logger.info("\n[NODE 6] Gửi notification...")
+        logger.info("\n[NODE 6] Send Notifications")
         
         summary = state.get('summary')
         action_items = state.get('action_items', [])
@@ -251,22 +283,20 @@ class MeetingToTaskAgent:
         # Lấy email mapping từ participants
         email_map = get_emails_from_participants(participants)
         
-        logger.info(f"  👥 Participants với email: {list(email_map.keys())}")
-        
         # Gửi email cho từng task
         results = []
+        emails_sent = []
+        
         for task in action_items:
-            assignee = task.get('assignee', '').lower()
+            assignee = (task.get('assignee') or '').lower()
             
             # Skip nếu là Unassigned
             if assignee == 'unassigned' or not assignee:
-                logger.info(f"  ⏭️ Skip task không có assignee: {task.get('title', '')}")
                 continue
             
             email = email_map.get(assignee)
             
             if not email:
-                logger.info(f"  ⚠️ Không tìm thấy email cho: {assignee}")
                 results.append({
                     "assignee": assignee,
                     "email": None,
@@ -299,6 +329,9 @@ class MeetingToTaskAgent:
                 subject=f"[Action Required] {meeting_metadata.get('title', 'Meeting')} - Công việc cho {assignee.title()}"
             )
             
+            if result:
+                emails_sent.append(email)
+            
             results.append({
                 "assignee": assignee,
                 "email": email,
@@ -306,8 +339,11 @@ class MeetingToTaskAgent:
                 "status": "sent" if result else "failed"
             })
         
+        # Log number of emails sent and list of emails
         sent_count = len([r for r in results if r['status'] == 'sent'])
-        logger.info(f"\n  📊 Đã gửi {sent_count}/{len(results)} email")
+        logger.info(f"Emails sent: {sent_count}")
+        if emails_sent:
+            logger.info(f"Sent to: {', '.join(emails_sent)}")
         
         return {'notification_sent': results}
     
@@ -330,7 +366,7 @@ class MeetingToTaskAgent:
     # ==================== PUBLIC METHODS ====================
     
     def run(self, audio_file_path: str, meeting_metadata: Optional[dict] = None, 
-            max_revisions: int = 2, thread_id: str = '1', transcript: Optional[str] = None):
+            max_revisions: int = 1, thread_id: str = '1', transcript: Optional[str] = None):
         """
         Chạy workflow đến điểm Human Review
         

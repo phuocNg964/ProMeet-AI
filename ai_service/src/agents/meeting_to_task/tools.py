@@ -13,8 +13,6 @@ from faster_whisper import WhisperModel
 from email.mime.text import MIMEText
 
 from src.core.config import settings
-
-from src.core.config import settings
 from src.core.context import get_request_token
 
 from src.core.logging import logger
@@ -36,7 +34,7 @@ def _get_auth_headers() -> dict:
         
     return headers
 
-def transcribe_audio(audio_file_path: str, use_mock: bool = False, provider: str = 'gemini') -> str:
+def transcribe_audio(audio_file_path: str, use_mock: bool = False, provider: str = 'gemini', participants: Optional[List[dict]] = None) -> str:
     """
     Convert audio file to text.
     """
@@ -95,13 +93,25 @@ def transcribe_audio(audio_file_path: str, use_mock: bool = False, provider: str
             
             logger.info(f"✅ [Gemini] File ready. Generating content...")
             
+            # Context regarding participants
+            participants_context = ""
+            if participants:
+                names = [p.get('name', 'Unknown') for p in participants if p.get('name')]
+                if names:
+                    participants_context = f" Danh sách người tham gia: {', '.join(names)}."
+
+            prompt_text = (
+                f"Tạo bản ghi chép cuộc họp chính xác từng từ.{participants_context} "
+                "Định dạng bắt buộc: [HH:MM:SS] Tên người nói: Nội dung hội thoại. Ngôn ngữ: Tiếng Việt."
+            )
+
             # Generate Content using the Client
             response = client.models.generate_content(
                 model='gemini-2.0-flash-lite', # Updated to latest or keep 1.5/2.0
                 contents=[
                     types.Content(
                         parts=[
-                            types.Part.from_text(text="Tạo bản ghi chép cuộc họp chính xác từng từ. Định dạng bắt buộc: [HH:MM:SS] Tên người nói: Nội dung hội thoại. Ngôn ngữ: Tiếng Việt."),
+                            types.Part.from_text(text=prompt_text),
                             types.Part.from_uri(
                                 file_uri=retrieved_file.uri,
                                 mime_type=retrieved_file.mime_type
@@ -226,7 +236,7 @@ def create_tasks(
                 "author_id": author_user_id, # Schema matches 'author_id'
                 "description": item.get("description"),
                 "status": item.get("status", "To Do"),
-                "priority": item.get("priority", "Medium"),
+                "priority": item.get("priority") or "Medium",  # Handle null priority
                 "tags": item_tags,
                 "due_date": item.get("due_date"),
                 "assignee_id": assigned_user_id, # CORRECTED field name

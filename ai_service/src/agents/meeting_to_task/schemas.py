@@ -12,7 +12,7 @@ class ActionItem(BaseModel):
     title: str = Field(..., description="Tiêu đề task, mô tả ngắn gọn công việc cần làm")
     description: Optional[str] = Field(None, description="Mô tả chi tiết về task, context và yêu cầu cụ thể")
     assignee: Optional[str] = Field(None, description="Tên người được giao task (phải nằm trong danh sách participants)")
-    priority: Optional[str] = Field(None, description="Độ ưu tiên: Low, Medium, High, hoặc Urgent")
+    priority: Optional[str] = Field(None, description="Độ ưu tiên: Low, Medium, High")
     due_date: Optional[str] = Field(None, description="Deadline của task, định dạng ISO: YYYY-MM-DD (ví dụ: 2025-12-15)")
     status: Optional[str] = Field("To Do", description="Trạng thái task: To Do, In Progress, Done")
     tags: Optional[str] = Field(None, description="Tags phân loại task, phân cách bằng dấu phẩy")
